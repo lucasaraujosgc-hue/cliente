@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { Calculator } from "lucide-react";
 
 export function SetupProfile() {
   const [email, setEmail] = useState("");
@@ -36,9 +37,15 @@ export function SetupProfile() {
       <div className="absolute inset-0 bg-gradient-to-br from-virgula-green/10 via-white dark:via-slate-900 to-slate-100/50 dark:to-slate-800/50 -z-0"></div>
       
       <div className="w-full max-w-lg bg-white/80 dark:bg-slate-800/80 backdrop-blur-xl rounded-3xl shadow-xl shadow-slate-200/50 dark:shadow-slate-900/50 border border-white dark:border-slate-700 p-8 z-10 mx-4">
-        <div className="text-center mb-8">
-          <div className="w-16 h-16 bg-virgula-card rounded-2xl mx-auto flex items-center justify-center text-virgula-green mb-4 shadow-[0_0_20px_rgba(16,185,129,0.3)]">
-             <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="16" cy="16" r="4"/><path d="M16 12V8h4"/><path d="M4 20h4l1.5-3h5l1.5 3h4L16 4H8z"/></svg>
+        <div className="text-center mb-8 flex flex-col items-center">
+          <div className="flex items-center space-x-3 mb-6">
+            <div className="w-12 h-12 bg-virgula-card rounded-xl border border-white/10 flex items-center justify-center text-virgula-green shadow-[0_0_20px_rgba(16,185,129,0.25)]">
+               <Calculator strokeWidth={2.5} className="w-[30px] h-[30px]" />
+            </div>
+            <div className="flex flex-col justify-center text-left">
+                <span className="text-3xl font-bold text-slate-900 dark:text-white tracking-tight leading-none mb-0.5">Vírgula</span>
+                <span className="text-base font-semibold text-virgula-green tracking-widest leading-none uppercase">Contábil</span>
+            </div>
           </div>
           <h1 className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight">Bem-vindo(a)!</h1>
           <p className="text-sm text-slate-500 dark:text-slate-400 mt-2">Para garantir sua segurança, por favor cadastre seu e-mail e atualize sua senha de acesso inicial.</p>

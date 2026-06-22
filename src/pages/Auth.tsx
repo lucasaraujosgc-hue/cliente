@@ -1,5 +1,6 @@
 import React, { useState, FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
+import { Calculator } from "lucide-react";
 
 export function Login() {
   const [cnpj, setCnpj] = useState("");
@@ -62,12 +63,12 @@ export function Login() {
           <div className="text-center mb-8 flex flex-col items-center">
             
             <div className="flex items-center space-x-3 mb-6">
-              <div className="w-10 h-10 bg-virgula-card rounded-xl border border-white/10 flex items-center justify-center text-virgula-green shadow-[0_0_15px_rgba(16,185,129,0.25)]">
-                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="16" cy="16" r="4"/><path d="M16 12V8h4"/><path d="M4 20h4l1.5-3h5l1.5 3h4L16 4H8z"/></svg>
+              <div className="w-12 h-12 bg-virgula-card rounded-xl border border-white/10 flex items-center justify-center text-virgula-green shadow-[0_0_20px_rgba(16,185,129,0.25)]">
+                 <Calculator strokeWidth={2.5} className="w-[30px] h-[30px]" />
               </div>
               <div className="flex flex-col justify-center text-left">
-                  <span className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight leading-none mb-0.5">Vírgula</span>
-                  <span className="text-sm font-semibold text-virgula-green tracking-widest leading-none uppercase">Contábil</span>
+                  <span className="text-3xl font-bold text-slate-900 dark:text-white tracking-tight leading-none mb-0.5">Vírgula</span>
+                  <span className="text-base font-semibold text-virgula-green tracking-widest leading-none uppercase">Contábil</span>
               </div>
             </div>
 
@@ -161,8 +162,17 @@ export function AccountantLogin() {
     <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center relative overflow-hidden">
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-blue-900/20 via-slate-900 to-slate-900 z-0"></div>
       <div className="w-full max-w-md bg-white/10 backdrop-blur-2xl rounded-3xl shadow-2xl border border-white/10 p-8 z-10 mx-4">
-        <div className="text-center mb-8">
-          <h1 className="text-2xl font-bold text-white tracking-tight">Área do Contador</h1>
+        <div className="text-center mb-8 flex flex-col items-center">
+          <div className="flex items-center space-x-3 mb-6">
+            <div className="w-12 h-12 bg-virgula-card rounded-xl border border-white/10 flex items-center justify-center text-virgula-green shadow-[0_0_20px_rgba(16,185,129,0.25)]">
+               <Calculator strokeWidth={2.5} className="w-[30px] h-[30px]" />
+            </div>
+            <div className="flex flex-col justify-center text-left">
+                <span className="text-3xl font-bold text-white tracking-tight leading-none mb-0.5">Vírgula</span>
+                <span className="text-base font-semibold text-virgula-green tracking-widest leading-none uppercase">Contábil</span>
+            </div>
+          </div>
+          <h1 className="text-xl font-bold text-white tracking-tight mt-2">Área do Contador</h1>
         </div>
 
         {error && (

@@ -1,103 +1,88 @@
-import fs from "fs";
-import path from "path";
-import { v4 as uuidv4 } from "uuid";
-import type { Client, Document, BillingData, Message } from "./types";
+import pg from "pg";
+import { drizzle } from "drizzle-orm/node-postgres";
+import * as schema from "./schema";
 
-const DB_FILE = path.join(process.cwd(), "db.json");
+const { Pool } = pg;
 
-interface DatabaseSchema {
-  clients: Client[];
-  documents: Document[];
-  billing: BillingData[];
-  messages: Message[];
-}
+export const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+});
 
-const defaultDB: DatabaseSchema = {
-  clients: [
-    {
-      id: "client-1",
-      cnpj: "12.345.678/0001-99",
-      name: "Empresa XPTO Ltda",
-      passwordHash: "12.345.678/0001-99", // First login is the CNPJ
-      regularityStatus: "warning",
-      firstAccessDone: false,
-    },
-    {
-      id: "client-2",
-      cnpj: "98.765.432/0001-11",
-      name: "Startup Inovadora S/A",
-      passwordHash: "98.765.432/0001-11",
-      regularityStatus: "green",
-      firstAccessDone: false,
+export const db = drizzle(pool, { schema });
+
+export async function initDb() {
+  const client = await pool.connect();
+  try {
+    // Basic automatic table creation for quick testing if they don't exist
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS "clients" (
+        "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        "cnpj" text NOT NULL UNIQUE,
+        "name" text NOT NULL,
+        "password_hash" text NOT NULL,
+        "regularity_status" text NOT NULL,
+        "email" text,
+        "first_access_done" boolean DEFAULT false,
+        "integration_hash" text UNIQUE
+      );
+
+      CREATE TABLE IF NOT EXISTS "documents" (
+        "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        "client_id" uuid NOT NULL REFERENCES "clients"("id") ON DELETE CASCADE,
+        "title" text NOT NULL,
+        "category" text NOT NULL,
+        "due_date" text,
+        "status" text NOT NULL,
+        "uploaded_by" text NOT NULL,
+        "created_at" timestamp DEFAULT now() NOT NULL,
+        "file_url" text
+      );
+
+      CREATE TABLE IF NOT EXISTS "billing_data" (
+        "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        "client_id" uuid NOT NULL REFERENCES "clients"("id") ON DELETE CASCADE,
+        "month" text NOT NULL,
+        "revenue" integer NOT NULL,
+        "expenses" integer NOT NULL,
+        "payroll" integer NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS "messages" (
+        "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        "client_id" uuid NOT NULL REFERENCES "clients"("id") ON DELETE CASCADE,
+        "content" text NOT NULL,
+        "created_at" timestamp DEFAULT now() NOT NULL,
+        "read" boolean DEFAULT false NOT NULL
+      );
+    `);
+    
+    // Check if empty, run seed
+    const res = await client.query('SELECT count(*) FROM "clients"');
+    if (parseInt(res.rows[0].count) === 0) {
+      await client.query(`
+        INSERT INTO "clients" ("id", "cnpj", "name", "password_hash", "regularity_status", "first_access_done") VALUES
+        ('c8f4b0ab-2b7e-4628-98e3-0d5b5b0eb101', '12.345.678/0001-99', 'Empresa XPTO Ltda', '12.345.678/0001-99', 'warning', false),
+        ('c8f4b0ab-2b7e-4628-98e3-0d5b5b0eb102', '98.765.432/0001-11', 'Startup Inovadora S/A', '98.765.432/0001-11', 'green', false);
+
+        INSERT INTO "documents" ("client_id", "title", "category", "due_date", "status", "uploaded_by") VALUES
+        ('c8f4b0ab-2b7e-4628-98e3-0d5b5b0eb101', 'Guia DAS (Simples Nacional)', 'taxes', '2026-06-20', 'pending', 'accountant'),
+        ('c8f4b0ab-2b7e-4628-98e3-0d5b5b0eb101', 'Contrato Social v2', 'company', null, 'viewed', 'accountant');
+
+        INSERT INTO "billing_data" ("client_id", "month", "revenue", "expenses", "payroll") VALUES
+        ('c8f4b0ab-2b7e-4628-98e3-0d5b5b0eb101', '2026-01', 50000, 15000, 20000),
+        ('c8f4b0ab-2b7e-4628-98e3-0d5b5b0eb101', '2026-02', 55000, 14000, 20000),
+        ('c8f4b0ab-2b7e-4628-98e3-0d5b5b0eb101', '2026-03', 48000, 16000, 20000),
+        ('c8f4b0ab-2b7e-4628-98e3-0d5b5b0eb101', '2026-04', 60000, 15000, 22000),
+        ('c8f4b0ab-2b7e-4628-98e3-0d5b5b0eb101', '2026-05', 65000, 18000, 22000);
+
+        INSERT INTO "messages" ("client_id", "content", "read") VALUES
+        ('c8f4b0ab-2b7e-4628-98e3-0d5b5b0eb101', 'Lembrete: fechamento da folha até dia 05, enviar recibos pendentes.', false);
+      `);
     }
-  ],
-  documents: [
-    {
-      id: "doc-1",
-      clientId: "client-1",
-      title: "Guia DAS (Simples Nacional)",
-      category: "taxes",
-      dueDate: "2026-06-20",
-      status: "pending",
-      uploadedBy: "accountant",
-      createdAt: "2026-06-01T10:00:00Z",
-    },
-    {
-      id: "doc-2",
-      clientId: "client-1",
-      title: "Contrato Social v2",
-      category: "company",
-      status: "viewed",
-      uploadedBy: "accountant",
-      createdAt: "2023-01-15T14:30:00Z",
-    }
-  ],
-  billing: [
-    { id: "bill-1", clientId: "client-1", month: "2026-01", revenue: 50000, expenses: 15000, payroll: 20000 },
-    { id: "bill-2", clientId: "client-1", month: "2026-02", revenue: 55000, expenses: 14000, payroll: 20000 },
-    { id: "bill-3", clientId: "client-1", month: "2026-03", revenue: 48000, expenses: 16000, payroll: 20000 },
-    { id: "bill-4", clientId: "client-1", month: "2026-04", revenue: 60000, expenses: 15000, payroll: 22000 },
-    { id: "bill-5", clientId: "client-1", month: "2026-05", revenue: 65000, expenses: 18000, payroll: 22000 },
-  ],
-  messages: [
-    {
-      id: "msg-1",
-      clientId: "client-1",
-      content: "Lembrete: fechamento da folha até dia 05, enviar recibos pendentes.",
-      createdAt: "2026-06-02T09:00:00Z",
-      read: false,
-    }
-  ]
-};
-
-let dbCache: DatabaseSchema | null = null;
-
-function loadDB(): DatabaseSchema {
-  if (dbCache) return dbCache;
-  if (!fs.existsSync(DB_FILE)) {
-    fs.writeFileSync(DB_FILE, JSON.stringify(defaultDB, null, 2));
-    dbCache = { ...defaultDB };
-  } else {
-    try {
-      const data = fs.readFileSync(DB_FILE, "utf-8");
-      dbCache = JSON.parse(data);
-    } catch {
-      dbCache = { ...defaultDB };
-    }
+  } catch (err) {
+    console.error("Failed to initialize database:", err);
+  } finally {
+    client.release();
   }
-  return dbCache!;
 }
 
-function saveDB(db: DatabaseSchema) {
-  fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2));
-  dbCache = db;
-}
-
-export const db = {
-  get db() {
-    return loadDB();
-  },
-  save() {
-    if (dbCache) saveDB(dbCache);
-  }
-};

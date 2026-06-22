@@ -3,6 +3,7 @@ import path from "path";
 import cors from "cors";
 import { createServer as createViteServer } from "vite";
 import { setupRoutes } from "./src/server/routes";
+import { initDb } from "./src/server/db";
 
 async function startServer() {
   const app = express();
@@ -12,6 +13,7 @@ async function startServer() {
   app.use(express.json());
 
   // Wait for async initialization if needed (e.g. SQLite connection or checking db files)
+  await initDb();
   setupRoutes(app);
 
   if (process.env.NODE_ENV !== "production") {

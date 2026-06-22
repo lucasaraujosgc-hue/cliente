@@ -4,7 +4,8 @@ import { v4 as uuidv4 } from "uuid";
 import crypto from "crypto";
 import nodemailer from "nodemailer";
 import { db } from "./db";
-import type { Client, Document, BillingData, Message } from "./types";
+import { clients, documents, billingData, messages } from "./schema";
+import { eq, desc, asc } from "drizzle-orm";
 
 const JWT_SECRET = crypto.randomBytes(32).toString("hex");
 
@@ -20,20 +21,20 @@ const transporter = nodemailer.createTransport({
 });
 
 // Middlewares
-function verifyIntegrationToken(req: Request, res: Response, next: NextFunction) {
+async function verifyIntegrationToken(req: Request, res: Response, next: NextFunction) {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
     return res.status(401).json({ error: "Missing or invalid token" });
   }
   const token = authHeader.split(" ")[1];
   
-  const client = db.db.clients.find(c => c.integrationHash === token);
-  if (!client) {
+  const clientList = await db.select().from(clients).where(eq(clients.integrationHash, token));
+  if (clientList.length === 0) {
     return res.status(403).json({ error: "Invalid integration token" });
   }
   
   // Attach client to request
-  (req as any).integrationClient = client;
+  (req as any).integrationClient = clientList[0];
   next();
 }
 
@@ -72,11 +73,13 @@ export function setupRoutes(app: Express) {
   // -------------------------------------------------------------
   
   // Client Login
-  app.post("/api/auth/client/login", (req, res) => {
+  app.post("/api/auth/client/login", async (req, res) => {
     const { cnpj, password } = req.body;
     const cleanCnpj = cnpj.replace(/\D/g, "");
     
-    const client = db.db.clients.find(c => c.cnpj.replace(/\D/g, "") === cleanCnpj && c.passwordHash === password);
+    const clientList = await db.select().from(clients);
+    const client = clientList.find(c => c.cnpj.replace(/\D/g, "") === cleanCnpj && c.passwordHash === password);
+    
     if (!client) {
       return res.status(401).json({ error: "Credenciais inválidas" });
     }
@@ -89,7 +92,7 @@ export function setupRoutes(app: Express) {
     const { username, password } = req.body;
     
     const adminUser = process.env.ADMIN || "admin";
-    const adminPass = process.env.PASSWORD || "admin";
+    const adminPass = process.env.PASSWORD || "admin_password";
     
     if (username === adminUser && password === adminPass) {
       const token = jwt.sign({ role: "accountant", name: "Contador" }, JWT_SECRET, { expiresIn: "30d" });
@@ -103,56 +106,58 @@ export function setupRoutes(app: Express) {
   // -------------------------------------------------------------
   
   // Upload doc via API
-  app.post("/api/integration/upload-doc", verifyIntegrationToken, (req, res) => {
+  app.post("/api/integration/upload-doc", verifyIntegrationToken, async (req, res) => {
     const client = (req as any).integrationClient;
     const { title, category, dueDate } = req.body;
-    const newDoc: Document = {
-      id: uuidv4(),
+    
+    const [newDoc] = await db.insert(documents).values({
       clientId: client.id,
       title,
       category,
       dueDate,
       status: "new",
       uploadedBy: "accountant",
-      createdAt: new Date().toISOString(),
-    };
-    db.db.documents.push(newDoc);
-    db.save();
-    res.json({ success: true, document: newDoc });
+    }).returning();
+
+    res.json({ success: true, document: { ...newDoc, createdAt: newDoc.createdAt.toISOString() } });
   });
 
   // Sync client (update or create)
-  app.post("/api/integration/sync-client", verifyIntegrationToken, (req, res) => {
+  app.post("/api/integration/sync-client", verifyIntegrationToken, async (req, res) => {
     const { cnpj, name, regularityStatus } = req.body;
-    let client = db.db.clients.find(c => c.cnpj === cnpj);
-    if (!client) {
-      client = {
-        id: uuidv4(),
+    const clientList = await db.select().from(clients).where(eq(clients.cnpj, cnpj));
+    let client;
+    if (clientList.length === 0) {
+      [client] = await db.insert(clients).values({
         cnpj,
         name,
-        passwordHash: cnpj.replace(/[^0-9]/g, "").slice(0, 6), // Generate password as first 6 digits of CNPJ
+        passwordHash: cnpj.replace(/[^0-9]/g, "").slice(0, 6),
         regularityStatus: regularityStatus || "green",
-      };
-      db.db.clients.push(client);
+      }).returning();
     } else {
-      if (name) client.name = name;
-      if (regularityStatus) client.regularityStatus = regularityStatus;
+      [client] = await db.update(clients).set({
+        name: name || clientList[0].name,
+        regularityStatus: regularityStatus || clientList[0].regularityStatus
+      }).where(eq(clients.cnpj, cnpj)).returning();
     }
-    db.save();
     res.json({ success: true, client });
   });
 
   // Update Billing
-  app.post("/api/integration/update-billing", verifyIntegrationToken, (req, res) => {
+  app.post("/api/integration/update-billing", verifyIntegrationToken, async (req, res) => {
     const { clientId, month, revenue, expenses, payroll } = req.body;
-    const existing = db.db.billing.find(b => b.clientId === clientId && b.month === month);
-    if (existing) {
-      existing.revenue = revenue;
-      existing.expenses = expenses;
-      existing.payroll = payroll;
+    
+    const existing = await db.select().from(billingData).where(eq(billingData.clientId, clientId));
+    const target = existing.find(b => b.month === month);
+    
+    if (target) {
+      await db.update(billingData).set({
+        revenue,
+        expenses,
+        payroll
+      }).where(eq(billingData.id, target.id));
     } else {
-      db.db.billing.push({
-        id: uuidv4(),
+      await db.insert(billingData).values({
         clientId,
         month,
         revenue,
@@ -160,7 +165,6 @@ export function setupRoutes(app: Express) {
         payroll
       });
     }
-    db.save();
     res.json({ success: true });
   });
 
@@ -168,20 +172,21 @@ export function setupRoutes(app: Express) {
   // CLIENT VIEW ENDPOINTS
   // -------------------------------------------------------------
 
-  app.get("/api/client/dashboard", verifyClientAuth, (req, res) => {
+  app.get("/api/client/dashboard", verifyClientAuth, async (req, res) => {
     const clientId = (req as any).user.clientId;
-    const client = db.db.clients.find(c => c.id === clientId);
-    if (!client) return res.status(404).json({ error: "Client not found" });
+    const clientList = await db.select().from(clients).where(eq(clients.id, clientId));
+    if (clientList.length === 0) return res.status(404).json({ error: "Client not found" });
 
-    const documents = db.db.documents.filter(d => d.clientId === clientId);
-    const billing = db.db.billing.filter(b => b.clientId === clientId).sort((a,b) => a.month.localeCompare(b.month));
-    const messages = db.db.messages.filter(m => m.clientId === clientId).sort((a,b) => b.createdAt.localeCompare(a.createdAt));
+    const client = clientList[0];
+    const docs = await db.select().from(documents).where(eq(documents.clientId, clientId));
+    const billing = await db.select().from(billingData).where(eq(billingData.clientId, clientId)).orderBy(asc(billingData.month));
+    const msgs = await db.select().from(messages).where(eq(messages.clientId, clientId)).orderBy(desc(messages.createdAt));
 
     res.json({
       client,
-      documents,
+      documents: docs.map(d => ({ ...d, createdAt: d.createdAt.toISOString() })),
       billing,
-      messages
+      messages: msgs.map(m => ({ ...m, createdAt: m.createdAt.toISOString() }))
     });
   });
 
@@ -189,15 +194,18 @@ export function setupRoutes(app: Express) {
     const clientId = (req as any).user.clientId;
     const { email, password } = req.body;
     
-    const client = db.db.clients.find(c => c.id === clientId);
-    if (!client) return res.status(404).json({ error: "Client not found" });
+    const clientList = await db.select().from(clients).where(eq(clients.id, clientId));
+    if (clientList.length === 0) return res.status(404).json({ error: "Client not found" });
 
-    client.email = email;
+    const updateData: any = {
+      email,
+      firstAccessDone: true
+    };
     if (password) {
-      client.passwordHash = password;
+      updateData.passwordHash = password;
     }
-    client.firstAccessDone = true;
-    db.save();
+    
+    const [client] = await db.update(clients).set(updateData).where(eq(clients.id, clientId)).returning();
 
     // Send Welcome Email
     if (process.env.EMAIL_USER && process.env.EMAIL_PASSWORD && email) {
@@ -224,7 +232,6 @@ export function setupRoutes(app: Express) {
          });
       } catch (err) {
          console.error("Error sending welcome email:", err);
-         // Continue even if email fails
       }
     }
 
@@ -232,32 +239,29 @@ export function setupRoutes(app: Express) {
   });
 
   // Upload file by client
-  app.post("/api/client/upload", verifyClientAuth, (req, res) => {
+  app.post("/api/client/upload", verifyClientAuth, async (req, res) => {
     const clientId = (req as any).user.clientId;
     const { title, category } = req.body;
-    const newDoc: Document = {
-      id: uuidv4(),
+    
+    const [newDoc] = await db.insert(documents).values({
       clientId,
       title: title || `Documento ${category}`,
       category,
       status: "new",
       uploadedBy: "client",
-      createdAt: new Date().toISOString()
-    };
-    db.db.documents.push(newDoc);
-    db.save();
-    res.json({ success: true, document: newDoc });
+    }).returning();
+    
+    res.json({ success: true, document: { ...newDoc, createdAt: newDoc.createdAt.toISOString() } });
   });
 
-  app.post("/api/client/mark-doc/:id", verifyClientAuth, (req, res) => {
+  app.post("/api/client/mark-doc/:id", verifyClientAuth, async (req, res) => {
     const clientId = (req as any).user.clientId;
     const docId = req.params.id;
     const { status } = req.body;
     
-    const doc = db.db.documents.find(d => d.id === docId && d.clientId === clientId);
-    if (doc) {
-      doc.status = status;
-      db.save();
+    const docs = await db.select().from(documents).where(eq(documents.id, docId));
+    if (docs.length > 0 && docs[0].clientId === clientId) {
+      await db.update(documents).set({ status }).where(eq(documents.id, docId));
       res.json({ success: true });
     } else {
       res.status(404).json({ error: "Doc not found" });
@@ -268,80 +272,86 @@ export function setupRoutes(app: Express) {
   // ACCOUNTANT VIEW ENDPOINTS
   // -------------------------------------------------------------
   
-  app.get("/api/accountant/clients", verifyAccountantAuth, (req, res) => {
-    res.json({ clients: db.db.clients });
+  app.get("/api/accountant/clients", verifyAccountantAuth, async (req, res) => {
+    const allClients = await db.select().from(clients);
+    res.json({ clients: allClients });
   });
 
-  app.get("/api/accountant/client/:id", verifyAccountantAuth, (req, res) => {
+  app.get("/api/accountant/client/:id", verifyAccountantAuth, async (req, res) => {
     const clientId = req.params.id;
-    const client = db.db.clients.find(c => c.id === clientId);
-    if (!client) return res.status(404).json({ error: "Client not found" });
+    const clientList = await db.select().from(clients).where(eq(clients.id, clientId));
+    if (clientList.length === 0) return res.status(404).json({ error: "Client not found" });
 
-    const documents = db.db.documents.filter(d => d.clientId === clientId);
-    const messages = db.db.messages.filter(m => m.clientId === clientId);
-    const billing = db.db.billing.filter(b => b.clientId === clientId);
+    const client = clientList[0];
+    const docs = await db.select().from(documents).where(eq(documents.clientId, clientId));
+    const msgs = await db.select().from(messages).where(eq(messages.clientId, clientId));
+    const billing = await db.select().from(billingData).where(eq(billingData.clientId, clientId));
 
-    res.json({ client, documents, messages, billing });
+    res.json({ 
+      client, 
+      documents: docs.map(d => ({ ...d, createdAt: d.createdAt.toISOString() })), 
+      messages: msgs.map(m => ({ ...m, createdAt: m.createdAt.toISOString() })), 
+      billing 
+    });
   });
 
-  app.get("/api/accountant/inbox", verifyAccountantAuth, (req, res) => {
-    // get all docs uploaded by client
-    const inboxDocs = db.db.documents.filter(d => d.uploadedBy === "client").map(doc => {
-       const client = db.db.clients.find(c => c.id === doc.clientId);
-       return { ...doc, clientName: client?.name || "Desconhecido" };
-    }).sort((a,b) => b.createdAt.localeCompare(a.createdAt));
+  app.get("/api/accountant/inbox", verifyAccountantAuth, async (req, res) => {
+    const allDocs = await db.select().from(documents).where(eq(documents.uploadedBy, "client")).orderBy(desc(documents.createdAt));
+    const allClients = await db.select().from(clients);
+    
+    const inboxDocs = allDocs.map(doc => {
+       const cl = allClients.find(c => c.id === doc.clientId);
+       return { ...doc, createdAt: doc.createdAt.toISOString(), clientName: cl?.name || "Desconhecido" };
+    });
+    
     res.json({ docs: inboxDocs });
   });
 
-  app.post("/api/accountant/upload-doc", verifyAccountantAuth, (req, res) => {
+  app.post("/api/accountant/upload-doc", verifyAccountantAuth, async (req, res) => {
     const { clientId, title, category, dueDate } = req.body;
-    const newDoc: Document = {
-      id: uuidv4(),
+    
+    const [newDoc] = await db.insert(documents).values({
       clientId,
       title,
       category,
       dueDate,
       status: "new",
-      uploadedBy: "accountant",
-      createdAt: new Date().toISOString(),
-    };
-    db.db.documents.push(newDoc);
-    db.save();
-    res.json({ success: true, document: newDoc });
+      uploadedBy: "accountant"
+    }).returning();
+
+    res.json({ success: true, document: { ...newDoc, createdAt: newDoc.createdAt.toISOString() } });
   });
 
-  app.post("/api/accountant/message", verifyAccountantAuth, (req, res) => {
+  app.post("/api/accountant/message", verifyAccountantAuth, async (req, res) => {
     const { clientId, content } = req.body;
-    const newMsg: Message = {
-      id: uuidv4(),
+    
+    await db.insert(messages).values({
       clientId,
       content,
-      read: false,
-      createdAt: new Date().toISOString()
-    };
-    db.db.messages.push(newMsg);
-    db.save();
+      read: false
+    });
+    
     res.json({ success: true });
   });
   
-  app.post("/api/accountant/client/:id/generate-token", verifyAccountantAuth, (req, res) => {
+  app.post("/api/accountant/client/:id/generate-token", verifyAccountantAuth, async (req, res) => {
      const clientId = req.params.id;
-     const client = db.db.clients.find(c => c.id === clientId);
-     if (!client) return res.status(404).json({ error: "Client not found" });
+     const clientList = await db.select().from(clients).where(eq(clients.id, clientId));
+     if (clientList.length === 0) return res.status(404).json({ error: "Client not found" });
 
      const newToken = "hash_" + uuidv4().replace(/-/g,"");
-     client.integrationHash = newToken;
-     db.save();
+     await db.update(clients).set({ integrationHash: newToken }).where(eq(clients.id, clientId));
+     
      res.json({ token: newToken });
   });
 
-  app.post("/api/accountant/client/:id/revoke-token", verifyAccountantAuth, (req, res) => {
+  app.post("/api/accountant/client/:id/revoke-token", verifyAccountantAuth, async (req, res) => {
      const clientId = req.params.id;
-     const client = db.db.clients.find(c => c.id === clientId);
-     if (!client) return res.status(404).json({ error: "Client not found" });
+     const clientList = await db.select().from(clients).where(eq(clients.id, clientId));
+     if (clientList.length === 0) return res.status(404).json({ error: "Client not found" });
 
-     client.integrationHash = undefined;
-     db.save();
+     await db.update(clients).set({ integrationHash: null }).where(eq(clients.id, clientId));
+     
      res.json({ success: true });
   });
 }

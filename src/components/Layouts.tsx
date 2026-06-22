@@ -1,5 +1,5 @@
 import { Outlet, Navigate, Link, useLocation, useNavigate } from "react-router-dom";
-import { LayoutDashboard, Folder, Upload, LogOut, Settings, Users } from "lucide-react";
+import { LayoutDashboard, Folder, Upload, LogOut, Settings, Users, Calculator } from "lucide-react";
 import { cn } from "../lib/utils";
 import { ThemeToggle } from "./ThemeToggle";
 
@@ -33,12 +33,12 @@ export function ClientLayout() {
       <aside className="w-64 flex flex-col border-r border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-800/70 backdrop-blur-xl z-20">
         <div className="h-20 flex items-center px-6">
           <div className="flex items-center space-x-3">
-             <div className="w-10 h-10 bg-virgula-card rounded-xl border border-white/10 flex items-center justify-center text-virgula-green shadow-[0_0_15px_rgba(16,185,129,0.25)] shrink-0">
-               <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="16" cy="16" r="4"/><path d="M16 12V8h4"/><path d="M4 20h4l1.5-3h5l1.5 3h4L16 4H8z"/></svg>
+             <div className="w-12 h-12 bg-virgula-card rounded-xl border border-white/10 flex items-center justify-center text-virgula-green shadow-[0_0_20px_rgba(16,185,129,0.25)] shrink-0">
+               <Calculator strokeWidth={2.5} className="w-[30px] h-[30px]" />
              </div>
              <div className="flex flex-col justify-center">
-                <span className="text-xl font-bold text-slate-900 dark:text-white tracking-tight leading-none mb-0.5">Vírgula</span>
-                <span className="text-[10px] font-semibold text-virgula-green tracking-widest leading-none uppercase">Contábil</span>
+                <span className="text-3xl font-bold text-slate-900 dark:text-white tracking-tight leading-none mb-0.5">Vírgula</span>
+                <span className="text-base font-semibold text-virgula-green tracking-widest leading-none uppercase">Contábil</span>
              </div>
           </div>
         </div>
@@ -121,12 +121,12 @@ export function AccountantLayout() {
       <aside className="w-64 bg-slate-900 dark:bg-slate-950 border-r border-slate-800 flex flex-col z-20 shadow-2xl">
         <div className="h-20 flex items-center px-6">
           <div className="flex items-center space-x-3">
-             <div className="w-10 h-10 bg-virgula-card rounded-xl border border-white/10 flex items-center justify-center text-virgula-green shadow-[0_0_15px_rgba(16,185,129,0.25)] shrink-0">
-               <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="16" cy="16" r="4"/><path d="M16 12V8h4"/><path d="M4 20h4l1.5-3h5l1.5 3h4L16 4H8z"/></svg>
+             <div className="w-12 h-12 bg-virgula-card rounded-xl border border-white/10 flex items-center justify-center text-virgula-green shadow-[0_0_20px_rgba(16,185,129,0.25)] shrink-0">
+               <Calculator strokeWidth={2.5} className="w-[30px] h-[30px]" />
              </div>
              <div className="flex flex-col justify-center">
-                <span className="text-xl font-bold text-white tracking-tight leading-none mb-0.5">Vírgula</span>
-                <span className="text-[10px] font-semibold text-virgula-green tracking-widest leading-none uppercase">Contador</span>
+                <span className="text-3xl font-bold text-white tracking-tight leading-none mb-0.5">Vírgula</span>
+                <span className="text-base font-semibold text-virgula-green tracking-widest leading-none uppercase">Contábil</span>
              </div>
           </div>
         </div>
