@@ -75,10 +75,17 @@ export function setupRoutes(app: Express) {
   // Client Login
   app.post("/api/auth/client/login", async (req, res) => {
     const { cnpj, password } = req.body;
-    const cleanCnpj = cnpj.replace(/\D/g, "");
+    const cleanCnpj = String(cnpj).replace(/\D/g, "");
     
     const clientList = await db.select().from(clients);
-    const client = clientList.find(c => c.cnpj.replace(/\D/g, "") === cleanCnpj && c.passwordHash === password);
+    const client = clientList.find(c => {
+      const dbCnpj = String(c.cnpj).replace(/\D/g, "");
+      const dbPassStr = String(c.passwordHash);
+      const inputPassStr = String(password);
+      
+      const passMatches = dbPassStr === inputPassStr || dbPassStr.replace(/\D/g, "") === inputPassStr.replace(/\D/g, "");
+      return dbCnpj === cleanCnpj && passMatches;
+    });
     
     if (!client) {
       return res.status(401).json({ error: "Credenciais inválidas" });
@@ -91,10 +98,10 @@ export function setupRoutes(app: Express) {
   app.post("/api/auth/accountant/login", (req, res) => {
     const { username, password } = req.body;
     
-    const adminUser = process.env.ADMIN || "admin";
-    const adminPass = process.env.PASSWORD || "admin_password";
+    const adminUser = String(process.env.ADMIN || "admin").trim();
+    const adminPass = String(process.env.PASSWORD || "admin_password").trim();
     
-    if (username === adminUser && password === adminPass) {
+    if (String(username).trim() === adminUser && String(password).trim() === adminPass) {
       const token = jwt.sign({ role: "accountant", name: "Contador" }, JWT_SECRET, { expiresIn: "30d" });
       return res.json({ token, user: { name: "Contador" } });
     }
