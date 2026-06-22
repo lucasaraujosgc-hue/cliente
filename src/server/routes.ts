@@ -75,6 +75,20 @@ export function setupRoutes(app: Express) {
   // Client Login
   app.post("/api/auth/client/login", async (req, res) => {
     const { cnpj, password } = req.body;
+    
+    // Check if it's the admin
+    const adminUser = String(process.env.ADMIN || "admin").trim();
+    const adminPass = String(process.env.PASSWORD || "admin_password").trim();
+    
+    const inputUserNum = String(cnpj).replace(/\D/g, "");
+    const adminUserNum = adminUser.replace(/\D/g, "");
+    
+    const userMatch = (String(cnpj) === adminUser) || (adminUserNum.length > 0 && adminUserNum === inputUserNum);
+    if (userMatch && String(password).trim() === adminPass) {
+      const token = jwt.sign({ role: "accountant", name: "Contador" }, JWT_SECRET, { expiresIn: "30d" });
+      return res.json({ token, role: "accountant", user: { name: "Contador" } });
+    }
+
     const cleanCnpj = String(cnpj).replace(/\D/g, "");
     
     const clientList = await db.select().from(clients);
@@ -91,7 +105,7 @@ export function setupRoutes(app: Express) {
       return res.status(401).json({ error: "Credenciais inválidas" });
     }
     const token = jwt.sign({ clientId: client.id, role: "client", name: client.name }, JWT_SECRET, { expiresIn: "30d" });
-    res.json({ token, client: { id: client.id, name: client.name, cnpj: client.cnpj, firstAccessDone: client.firstAccessDone } });
+    res.json({ token, role: "client", client: { id: client.id, name: client.name, cnpj: client.cnpj, firstAccessDone: client.firstAccessDone } });
   });
 
   // Accountant Login
@@ -101,7 +115,11 @@ export function setupRoutes(app: Express) {
     const adminUser = String(process.env.ADMIN || "admin").trim();
     const adminPass = String(process.env.PASSWORD || "admin_password").trim();
     
-    if (String(username).trim() === adminUser && String(password).trim() === adminPass) {
+    const inputUserNum = String(username).replace(/\D/g, "");
+    const adminUserNum = adminUser.replace(/\D/g, "");
+    const userMatch = (username === adminUser) || (adminUserNum.length > 0 && adminUserNum === inputUserNum);
+    
+    if (userMatch && String(password).trim() === adminPass) {
       const token = jwt.sign({ role: "accountant", name: "Contador" }, JWT_SECRET, { expiresIn: "30d" });
       return res.json({ token, user: { name: "Contador" } });
     }

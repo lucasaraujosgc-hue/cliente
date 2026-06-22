@@ -34,6 +34,12 @@ export function Login() {
       });
       const data = await res.json();
       if (res.ok) {
+        if (data.role === "accountant") {
+           localStorage.setItem("accountantToken", data.token);
+           navigate("/admin");
+           return;
+        }
+
         if (rememberMe) {
            localStorage.setItem("clientToken", data.token);
            localStorage.setItem("clientUser", JSON.stringify(data.client));
