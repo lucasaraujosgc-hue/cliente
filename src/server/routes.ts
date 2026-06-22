@@ -3,10 +3,12 @@ import jwt from "jsonwebtoken";
 import { v4 as uuidv4 } from "uuid";
 import crypto from "crypto";
 import nodemailer from "nodemailer";
+import multer from "multer";
 import { db } from "./db";
 import { clients, documents, billingData, messages } from "./schema";
 import { eq, desc, asc } from "drizzle-orm";
 
+const upload = multer({ limits: { fileSize: 10 * 1024 * 1024 } }); // 10 MB limit
 const JWT_SECRET = crypto.randomBytes(32).toString("hex");
 
 // Email Transporter
@@ -263,6 +265,77 @@ export function setupRoutes(app: Express) {
     res.json({ success: true, client });
   });
 
+  app.post("/api/client/update-billing", verifyClientAuth, async (req, res) => {
+    const clientId = (req as any).user.clientId;
+    const { month, servicesRevenue, salesRevenue, totalIncomes, servicesTaken } = req.body;
+    
+    try {
+      const existing = await db.select().from(billingData).where(eq(billingData.clientId, clientId));
+      const target = existing.find(b => b.month === month);
+      
+      const updatePayload = {
+        servicesRevenue: servicesRevenue || 0,
+        salesRevenue: salesRevenue || 0,
+        totalIncomes: totalIncomes || 0,
+        servicesTaken: servicesTaken || 0,
+        // Legacy fallback
+        revenue: (servicesRevenue || 0) + (salesRevenue || 0),
+        expenses: servicesTaken || 0,
+        payroll: 0
+      };
+
+      if (target) {
+        await db.update(billingData).set(updatePayload).where(eq(billingData.id, target.id));
+      } else {
+        await db.insert(billingData).values({
+          ...updatePayload,
+          clientId,
+          month
+        });
+      }
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/client/bulk-billing", verifyClientAuth, async (req, res) => {
+    const clientId = (req as any).user.clientId;
+    const { data } = req.body; // Array of items
+    
+    try {
+      for (const item of data) {
+        const { month, servicesRevenue, salesRevenue, totalIncomes, servicesTaken } = item;
+        const existing = await db.select().from(billingData).where(eq(billingData.clientId, clientId));
+        const target = existing.find(b => b.month === month);
+        
+        const updatePayload = {
+          servicesRevenue: servicesRevenue || 0,
+          salesRevenue: salesRevenue || 0,
+          totalIncomes: totalIncomes || 0,
+          servicesTaken: servicesTaken || 0,
+          // Legacy fallback
+          revenue: (servicesRevenue || 0) + (salesRevenue || 0),
+          expenses: servicesTaken || 0,
+          payroll: 0
+        };
+
+        if (target) {
+          await db.update(billingData).set(updatePayload).where(eq(billingData.id, target.id));
+        } else {
+          await db.insert(billingData).values({
+            ...updatePayload,
+            clientId,
+            month
+          });
+        }
+      }
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
   // Upload file by client
   app.post("/api/client/upload", verifyClientAuth, async (req, res) => {
     const clientId = (req as any).user.clientId;
@@ -303,6 +376,38 @@ export function setupRoutes(app: Express) {
     res.json({ clients: allClients });
   });
 
+  app.post("/api/accountant/clients", verifyAccountantAuth, async (req, res) => {
+    const { cnpj, name, regularityStatus, integrationHash, accountantCategory } = req.body;
+    try {
+      const [newClient] = await db.insert(clients).values({
+        cnpj,
+        name,
+        passwordHash: cnpj.replace(/\D/g, "").slice(0, 6),
+        regularityStatus: regularityStatus || "green",
+        integrationHash: integrationHash || null,
+        accountantCategory: accountantCategory || null
+      }).returning();
+      res.json({ success: true, client: newClient });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.put("/api/accountant/client/:id", verifyAccountantAuth, async (req, res) => {
+    const { name, regularityStatus, integrationHash, accountantCategory } = req.body;
+    try {
+      const [updated] = await db.update(clients).set({
+        name,
+        regularityStatus,
+        integrationHash: integrationHash || null,
+        accountantCategory: accountantCategory || null
+      }).where(eq(clients.id, req.params.id)).returning();
+      res.json({ success: true, client: updated });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
   app.get("/api/accountant/client/:id", verifyAccountantAuth, async (req, res) => {
     const clientId = req.params.id;
     const clientList = await db.select().from(clients).where(eq(clients.id, clientId));
@@ -334,13 +439,14 @@ export function setupRoutes(app: Express) {
   });
 
   app.post("/api/accountant/upload-doc", verifyAccountantAuth, async (req, res) => {
-    const { clientId, title, category, dueDate } = req.body;
+    const { clientId, title, category, dueDate, competence } = req.body;
     
     const [newDoc] = await db.insert(documents).values({
       clientId,
       title,
       category,
       dueDate,
+      competence,
       status: "new",
       uploadedBy: "accountant"
     }).returning();
@@ -380,4 +486,65 @@ export function setupRoutes(app: Express) {
      
      res.json({ success: true });
   });
+
+  // Webhook for External System Integration
+  app.post("/api/webhook/documentos", upload.single("arquivo"), async (req, res) => {
+    try {
+      let companyHash, categoria, nomeArquivo, dataVencimento;
+      let arquivoBase64 = null;
+
+      if (req.file) {
+        // multipart/form-data
+        companyHash = req.body.companyHash;
+        categoria = req.body.categoria || "Outros";
+        nomeArquivo = req.body.nomeArquivo || req.file.originalname;
+        dataVencimento = req.body.dataVencimento;
+        arquivoBase64 = "data:" + req.file.mimetype + ";base64," + req.file.buffer.toString("base64");
+      } else {
+        // JSON
+        companyHash = req.body.companyHash;
+        categoria = req.body.categoria || "Outros";
+        nomeArquivo = req.body.nomeArquivo || "Documento Integrado";
+        dataVencimento = req.body.dataVencimento;
+        if (req.body.arquivo) {
+           arquivoBase64 = String(req.body.arquivo).startsWith("data:") 
+              ? req.body.arquivo 
+              : "data:application/pdf;base64," + req.body.arquivo;
+        }
+      }
+
+      if (!companyHash) {
+        return res.status(400).json({ error: "O parâmetro companyHash é obrigatório" });
+      }
+
+      const clientList = await db.select().from(clients).where(eq(clients.integrationHash, companyHash));
+      if (clientList.length === 0) {
+        return res.status(404).json({ error: "Empresa não encontrada para este hash" });
+      }
+
+      const targetClient = clientList[0];
+
+      // Create document
+      const [newDoc] = await db.insert(documents).values({
+        clientId: targetClient.id,
+        title: nomeArquivo,
+        category: categoria,
+        dueDate: dataVencimento || null,
+        status: "new",
+        uploadedBy: "accountant",
+        fileUrl: arquivoBase64
+      }).returning();
+
+      return res.status(201).json({ 
+        success: true, 
+        message: "Documento salvo com sucesso",
+        documentId: newDoc.id 
+      });
+      
+    } catch (e: any) {
+      console.error("Webhook Erro:", e);
+      return res.status(500).json({ error: "Erro interno no servidor webhook: " + e.message });
+    }
+  });
+
 }

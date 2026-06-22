@@ -56,8 +56,16 @@ export async function initDb() {
       );
     `);
 
-    // Add competence column to documents if it does not exist
+    // Schema updates
+    await client.query(`ALTER TABLE "clients" ADD COLUMN IF NOT EXISTS "accountant_category" text;`);
+    await client.query(`ALTER TABLE "billing_data" ADD COLUMN IF NOT EXISTS "services_revenue" integer DEFAULT 0 NOT NULL;`);
+    await client.query(`ALTER TABLE "billing_data" ADD COLUMN IF NOT EXISTS "sales_revenue" integer DEFAULT 0 NOT NULL;`);
+    await client.query(`ALTER TABLE "billing_data" ADD COLUMN IF NOT EXISTS "total_incomes" integer DEFAULT 0 NOT NULL;`);
+    await client.query(`ALTER TABLE "billing_data" ADD COLUMN IF NOT EXISTS "services_taken" integer DEFAULT 0 NOT NULL;`);
     await client.query(`ALTER TABLE "documents" ADD COLUMN IF NOT EXISTS "competence" text;`);
+
+    // Remove test companies
+    await client.query(`DELETE FROM "clients" WHERE cnpj IN ('12.345.678/0001-99', '98.765.432/0001-11');`);
     
     // Check if empty, run seed
     const res = await client.query('SELECT count(*) FROM "clients"');

@@ -1,15 +1,20 @@
 import React, { useEffect, useState, useRef } from "react";
-import { AlertCircle, CheckCircle, Copy, Bell, Upload, FileCheck } from "lucide-react";
+import { AlertCircle, CheckCircle, Copy, Bell, Upload, FileCheck, FileSpreadsheet, Edit3 } from "lucide-react";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Legend } from "recharts";
-import { format, parseISO, subMonths } from "date-fns";
+import { format, parse, subMonths, isBefore, isAfter, isEqual } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import * as XLSX from "xlsx";
 
 export function ClientDashboard() {
   const [data, setData] = useState<any>(null);
   const [selectedCompetence, setSelectedCompetence] = useState(format(subMonths(new Date(), 1), "MM/yyyy"));
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const excelFileRef = useRef<HTMLInputElement>(null);
   const user = JSON.parse(localStorage.getItem("clientUser") || sessionStorage.getItem("clientUser") || "{}");
+
+  const [billingForm, setBillingForm] = useState({ servicesRevenue: 0, salesRevenue: 0, totalIncomes: 0, servicesTaken: 0 });
+  const [showBillingForm, setShowBillingForm] = useState(false);
 
   const loadData = () => {
     const token = localStorage.getItem("clientToken") || sessionStorage.getItem("clientToken");
@@ -17,8 +22,27 @@ export function ClientDashboard() {
       headers: { Authorization: `Bearer ${token}` }
     })
       .then(r => r.json())
-      .then(setData);
+      .then(d => {
+         setData(d);
+         const entry = d.billing.find((b: any) => b.month === selectedCompetence);
+         if (entry) {
+           setBillingForm({ servicesRevenue: entry.servicesRevenue, salesRevenue: entry.salesRevenue, totalIncomes: entry.totalIncomes, servicesTaken: entry.servicesTaken });
+         } else {
+           setBillingForm({ servicesRevenue: 0, salesRevenue: 0, totalIncomes: 0, servicesTaken: 0 });
+         }
+      });
   }
+
+  useEffect(() => {
+    if (data) {
+       const entry = data.billing.find((b: any) => b.month === selectedCompetence);
+       if (entry) {
+         setBillingForm({ servicesRevenue: entry.servicesRevenue, salesRevenue: entry.salesRevenue, totalIncomes: entry.totalIncomes, servicesTaken: entry.servicesTaken });
+       } else {
+         setBillingForm({ servicesRevenue: 0, salesRevenue: 0, totalIncomes: 0, servicesTaken: 0 });
+       }
+    }
+  }, [selectedCompetence]);
 
   useEffect(() => {
     loadData();
@@ -32,8 +56,6 @@ export function ClientDashboard() {
     const token = localStorage.getItem("clientToken") || sessionStorage.getItem("clientToken");
     
     try {
-      // In a real app we would upload the file to cloud storage (S3/GCS) 
-      // For this prototype, we just register the action in the DB
       await fetch("/api/client/upload", {
         method: "POST",
         headers: {
@@ -55,14 +77,80 @@ export function ClientDashboard() {
     }
   };
 
+  const saveBillingData = async (e?: React.FormEvent) => {
+    if(e) e.preventDefault();
+    const token = localStorage.getItem("clientToken") || sessionStorage.getItem("clientToken");
+    try {
+      await fetch("/api/client/update-billing", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ month: selectedCompetence, ...billingForm })
+      });
+      setShowBillingForm(false);
+      loadData();
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleExcelImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      const bstr = evt.target?.result;
+      const wb = XLSX.read(bstr, { type: "binary" });
+      const wsname = wb.SheetNames[0];
+      const ws = wb.Sheets[wsname];
+      const data = XLSX.utils.sheet_to_json(ws);
+      
+      const parsedData = data.map((row: any) => ({
+         month: row.Competencia || row.Mes || row.month,
+         servicesRevenue: Number(row.FaturamentoServico || row.servicesRevenue || 0),
+         salesRevenue: Number(row.FaturamentoVenda || row.salesRevenue || 0),
+         totalIncomes: Number(row.TotalEntradas || row.totalIncomes || 0),
+         servicesTaken: Number(row.ServicosTomados || row.servicesTaken || 0),
+      })).filter(r => r.month);
+
+      if (parsedData.length > 0) {
+        const token = localStorage.getItem("clientToken") || sessionStorage.getItem("clientToken");
+        await fetch("/api/client/bulk-billing", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ data: parsedData })
+        });
+        loadData();
+      }
+      if (excelFileRef.current) excelFileRef.current.value = "";
+    };
+    reader.readAsBinaryString(file);
+  };
+
   if (!data) return <div className="animate-pulse flex space-x-4"><div className="flex-1 space-y-4 py-1"><div className="h-4 bg-slate-200 rounded w-3/4"></div><div className="space-y-2"><div className="h-4 bg-slate-200 rounded"></div><div className="h-4 bg-slate-200 rounded w-5/6"></div></div></div></div>;
 
-  // Filter pending documents by competence
   const pendingDocs = data.documents.filter((d: any) => d.competence === selectedCompetence && (d.status === "pending" || d.status === "new") && d.category !== "bank_statement");
-  
-  // Check if bank statement was uploaded for this competence
   const hasBankStatement = data.documents.some((d: any) => d.category === "bank_statement" && d.competence === selectedCompetence);
+
+  // Compute historic data for the charts (up to 12 months)
+  // Parse selected competence
+  const compDate = parse(selectedCompetence, "MM/yyyy", new Date());
+  compDate.setDate(1); // Standardize on the first of the month
   
+  // Create last 12 months array
+  const last12Months = Array.from({length: 12}, (_, i) => format(subMonths(compDate, 11 - i), "MM/yyyy"));
+  
+  // Map billing data to this timeline
+  const chartData = last12Months.map(m => {
+     const found = data.billing.find((b:any) => b.month === m);
+     return {
+       month: m,
+       FaturamentoServiço: found?.servicesRevenue || 0,
+       FaturamentoVendas: found?.salesRevenue || 0,
+       Tomados: found?.servicesTaken || 0,
+       Entradas: found?.totalIncomes || 0
+     };
+  });
+
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
       <header className="h-16 flex items-center justify-between px-8 bg-white/40 backdrop-blur-md border border-white rounded-2xl shadow-sm -mx-4 dark:bg-slate-800/40 dark:border-slate-700">
@@ -76,48 +164,74 @@ export function ClientDashboard() {
           <select 
             value={selectedCompetence}
             onChange={e => setSelectedCompetence(e.target.value)}
-            className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-bold text-slate-800 dark:text-white"
+            className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-bold text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-virgula-green"
           >
-            <option value="06/2026">06/2026</option>
-            <option value="05/2026">05/2026</option>
-            <option value="04/2026">04/2026</option>
-            <option value="03/2026">03/2026</option>
-            <option value="02/2026">02/2026</option>
-            <option value="01/2026">01/2026</option>
+            {Array.from({length: 24}, (_, i) => {
+               const d = format(subMonths(new Date(), i), "MM/yyyy");
+               return <option key={d} value={d}>{d}</option>
+            })}
           </select>
         </div>
       </header>
 
-      {/* Alertas e Regularidade */}
+      {/* Alertas e Upload de Faturamento */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="col-span-1 md:col-span-2 space-y-4">
           
           <div className="bg-white/80 dark:bg-slate-800/80 backdrop-blur-xl border border-white dark:border-slate-700 rounded-3xl p-6 shadow-xl shadow-slate-200/50 dark:shadow-slate-900/50 flex flex-col justify-center">
-            <h3 className="font-bold text-slate-800 dark:text-white mb-2">Extrato Bancário</h3>
-            <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">Envie seu extrato bancário (PDF ou OFX) referente à competência <strong>{selectedCompetence}</strong>.</p>
+            <h3 className="font-bold text-slate-800 dark:text-white mb-2">Inserir Dados da Competência {selectedCompetence}</h3>
+            <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">Envie seu extrato bancário ou informe seus valores de faturamento e serviços.</p>
             
-            {hasBankStatement ? (
-              <div className="flex items-center text-virgula-green font-bold bg-virgula-green/10 p-3 rounded-xl border border-virgula-green/20">
-                <FileCheck className="w-5 h-5 mr-2" /> Extrato processado para {selectedCompetence}
-              </div>
-            ) : (
-              <div>
-                <input 
-                  type="file" 
-                  ref={fileInputRef}
-                  className="hidden" 
-                  accept=".pdf,.ofx" 
-                  onChange={handleUploadBankStatement}
-                />
-                <button 
-                  disabled={isUploading}
-                  onClick={() => fileInputRef.current?.click()}
-                  className="w-full sm:w-auto px-6 py-3 bg-slate-900 dark:bg-virgula-green text-white text-sm font-bold rounded-xl shadow-md hover:opacity-90 transition-opacity flex items-center justify-center disabled:opacity-50"
-                >
-                  <Upload className="w-4 h-4 mr-2" /> 
-                  {isUploading ? "Enviando..." : `Fazer Upload do Extrato (${selectedCompetence})`}
-                </button>
-              </div>
+            <div className="flex flex-wrap gap-3 mb-6">
+               {hasBankStatement ? (
+                 <div className="flex-1 min-w-[200px] flex justify-center items-center text-virgula-green font-bold bg-virgula-green/10 p-3 rounded-xl border border-virgula-green/20 text-sm">
+                   <FileCheck className="w-5 h-5 mr-2" /> Extrato anexado
+                 </div>
+               ) : (
+                 <div className="flex-1 min-w-[200px]">
+                   <input type="file" ref={fileInputRef} className="hidden" accept=".pdf,.ofx" onChange={handleUploadBankStatement}/>
+                   <button disabled={isUploading} onClick={() => fileInputRef.current?.click()} className="w-full px-4 py-3 bg-slate-900 dark:bg-slate-700 text-white text-sm font-bold rounded-xl shadow-md hover:bg-slate-800 transition-colors flex items-center justify-center disabled:opacity-50">
+                     <Upload className="w-4 h-4 mr-2" /> {isUploading ? "Enviando..." : "Extrato Bancário"}
+                   </button>
+                 </div>
+               )}
+               
+               <div className="flex-1 min-w-[200px]">
+                  <input type="file" ref={excelFileRef} className="hidden" accept=".xlsx,.xls,.csv" onChange={handleExcelImport} />
+                  <button onClick={() => excelFileRef.current?.click()} className="w-full px-4 py-3 bg-emerald-600 text-white text-sm font-bold rounded-xl shadow-md hover:bg-emerald-700 transition-colors flex items-center justify-center">
+                    <FileSpreadsheet className="w-4 h-4 mr-2" /> Importar Excel (.xlsx)
+                  </button>
+               </div>
+               
+               <div className="flex-1 min-w-[200px]">
+                  <button onClick={() => setShowBillingForm(!showBillingForm)} className="w-full px-4 py-3 border-2 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-sm font-bold rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors flex items-center justify-center">
+                    <Edit3 className="w-4 h-4 mr-2" /> Preencher Manual
+                  </button>
+               </div>
+            </div>
+
+            {showBillingForm && (
+              <form onSubmit={saveBillingData} className="bg-slate-50 dark:bg-slate-900/30 p-4 rounded-2xl border border-slate-100 dark:border-slate-800 mt-2 space-y-4 animate-in slide-in-from-top-2">
+                 <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">Faturamento Serviços</label>
+                      <input type="number" value={billingForm.servicesRevenue} onChange={e => setBillingForm({...billingForm, servicesRevenue: Number(e.target.value)})} className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-800 dark:text-white" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">Faturamento Vendas</label>
+                      <input type="number" value={billingForm.salesRevenue} onChange={e => setBillingForm({...billingForm, salesRevenue: Number(e.target.value)})} className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-800 dark:text-white" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">Serviços Tomados</label>
+                      <input type="number" value={billingForm.servicesTaken} onChange={e => setBillingForm({...billingForm, servicesTaken: Number(e.target.value)})} className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-800 dark:text-white" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">Total Entradas</label>
+                      <input type="number" value={billingForm.totalIncomes} onChange={e => setBillingForm({...billingForm, totalIncomes: Number(e.target.value)})} className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-800 dark:text-white" />
+                    </div>
+                 </div>
+                 <button type="submit" className="w-full py-2 bg-virgula-green text-white font-bold rounded-lg shadow-sm text-sm hover:opacity-90">Salvar Faturamento</button>
+              </form>
             )}
           </div>
 
@@ -150,7 +264,7 @@ export function ClientDashboard() {
                </div>
                <div className="flex gap-2">
                  <button className="px-4 py-2 text-xs font-bold rounded-lg border border-amber-300 dark:border-amber-700/50 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/50 transition-colors flex items-center">
-                    <Copy className="w-3 h-3 mr-1" /> Copiar
+                    <Copy className="w-3 h-3 mr-1" /> Copiar Cód.
                  </button>
                  <button className="px-4 py-2 text-xs font-bold rounded-lg bg-amber-600 dark:bg-amber-500 text-white hover:bg-amber-700 dark:hover:bg-amber-600 transition-colors">
                     Marcar Pago
@@ -184,38 +298,44 @@ export function ClientDashboard() {
       {/* Gráficos */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-white/80 dark:bg-slate-800/80 backdrop-blur-xl rounded-3xl border border-white dark:border-slate-700 p-6 shadow-xl shadow-slate-200/50 dark:shadow-slate-900/50">
-          <h3 className="font-bold text-slate-800 dark:text-white mb-6">Evolução do Faturamento Anual</h3>
+          <h3 className="font-bold text-slate-800 dark:text-white mb-6">Faturamento Acumulado (12 Meses)</h3>
           <div className="h-[250px]">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={data.billing} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+              <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                 <defs>
-                  <linearGradient id="colorRev" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.1}/>
-                    <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                  <linearGradient id="colorServ" x1="0" y1="0" x2="0" y2="1">
+                     <stop offset="5%" stopColor="#10b981" stopOpacity={0.2}/>
+                     <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                  </linearGradient>
+                  <linearGradient id="colorVend" x1="0" y1="0" x2="0" y2="1">
+                     <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.2}/>
+                     <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" opacity={0.2} />
-                <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 10, fontWeight: 'bold', textTransform: 'uppercase'}} dy={10} />
+                <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 10, fontWeight: 'bold'}} dy={10} />
                 <YAxis axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 10}} />
                 <Tooltip contentStyle={{ borderRadius: '12px', border: 'none', background: 'rgba(30,41,59,0.9)', color: 'white', backdropFilter: 'blur(8px)' }} />
-                <Area type="monotone" dataKey="revenue" stroke="#10b981" strokeWidth={3} fillOpacity={1} fill="url(#colorRev)" />
+                <Legend iconType="circle" wrapperStyle={{ fontSize: '10px', paddingTop: '10px', fontWeight: 'bold', color: '#94a3b8' }} />
+                <Area type="monotone" dataKey="FaturamentoServiço" stroke="#10b981" strokeWidth={3} fillOpacity={1} fill="url(#colorServ)" />
+                <Area type="monotone" dataKey="FaturamentoVendas" stroke="#3b82f6" strokeWidth={3} fillOpacity={1} fill="url(#colorVend)" />
               </AreaChart>
             </ResponsiveContainer>
           </div>
         </div>
 
         <div className="bg-white/80 dark:bg-slate-800/80 backdrop-blur-xl rounded-3xl border border-white dark:border-slate-700 p-6 shadow-xl shadow-slate-200/50 dark:shadow-slate-900/50">
-          <h3 className="font-bold text-slate-800 dark:text-white mb-6">Despesas & Folha</h3>
+          <h3 className="font-bold text-slate-800 dark:text-white mb-6">Entradas e Serviços Tomados</h3>
           <div className="h-[250px]">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={data.billing} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+              <BarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" opacity={0.2} />
-                <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 10, fontWeight: 'bold', textTransform: 'uppercase'}} dy={10} />
+                <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 10, fontWeight: 'bold'}} dy={10} />
                 <YAxis axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 10}} />
                 <Tooltip cursor={{fill: 'rgba(255,255,255,0.05)'}} contentStyle={{ borderRadius: '12px', border: 'none', background: 'rgba(30,41,59,0.9)', color: 'white', backdropFilter: 'blur(8px)' }} />
                 <Legend iconType="circle" wrapperStyle={{ fontSize: '10px', paddingTop: '10px', fontWeight: 'bold', color: '#94a3b8' }} />
-                <Bar dataKey="expenses" name="Despesas" fill="#cbd5e1" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="payroll" name="Folha" fill="#10b981" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="Entradas" fill="#10b981" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="Tomados" name="Serviços Tomados" fill="#ef4444" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>

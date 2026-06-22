@@ -10,6 +10,7 @@ export const clients = pgTable('clients', {
   email: text('email'),
   firstAccessDone: boolean('first_access_done').default(false),
   integrationHash: text('integration_hash').unique(),
+  accountantCategory: text('accountant_category'),
 });
 
 export const documents = pgTable('documents', {
@@ -28,10 +29,16 @@ export const documents = pgTable('documents', {
 export const billingData = pgTable('billing_data', {
   id: uuid('id').primaryKey().defaultRandom(),
   clientId: uuid('client_id').notNull().references(() => clients.id),
-  month: text('month').notNull(), // e.g. "Jan", "Fev" or "2026-01"
-  revenue: integer('revenue').notNull(),
-  expenses: integer('expenses').notNull(),
-  payroll: integer('payroll').notNull(),
+  month: text('month').notNull(), // "MM/YYYY"
+  servicesRevenue: integer('services_revenue').default(0).notNull(),
+  salesRevenue: integer('sales_revenue').default(0).notNull(),
+  totalIncomes: integer('total_incomes').default(0).notNull(),
+  servicesTaken: integer('services_taken').default(0).notNull(),
+  // Keeping old fields just in case or we can just replace them entirely.
+  // Actually replacing them entirely is better but we might have seed data.
+  revenue: integer('revenue').default(0).notNull(),
+  expenses: integer('expenses').default(0).notNull(),
+  payroll: integer('payroll').default(0).notNull(),
 });
 
 export const messages = pgTable('messages', {

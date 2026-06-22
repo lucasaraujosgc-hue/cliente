@@ -31,6 +31,7 @@ export function ClientDetail() {
         clientId: id, 
         title: formData.get("title"),
         category: formData.get("category"),
+        competence: formData.get("competence"),
         dueDate: formData.get("dueDate"),
       })
     });
@@ -94,7 +95,11 @@ export function ClientDetail() {
                    </select>
                 </div>
                 <div className="flex-1">
-                   <label className="block text-xs font-semibold text-slate-500 mb-1">Vencimento (Opcional)</label>
+                   <label className="block text-xs font-semibold text-slate-500 mb-1">Competência</label>
+                   <input type="text" name="competence" placeholder="MM/yyyy" className="w-full px-3 py-2 text-sm border border-slate-200 bg-white/50 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"/>
+                </div>
+                <div className="flex-1">
+                   <label className="block text-xs font-semibold text-slate-500 mb-1">Vencimento (Opc.)</label>
                    <input type="date" name="dueDate" className="w-full px-3 py-2 text-sm border border-slate-200 bg-white/50 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"/>
                 </div>
               </div>
