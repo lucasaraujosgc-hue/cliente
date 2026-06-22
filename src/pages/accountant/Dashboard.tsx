@@ -47,6 +47,12 @@ export function AccountantDashboard() {
                   <div className="text-xs text-slate-500 mt-1 flex gap-2 items-center">
                      <span className="font-medium text-slate-700">{doc.clientName}</span>
                      <span>•</span>
+                     {doc.competence && (
+                       <>
+                         <span className="font-bold text-slate-800">Comp: {doc.competence}</span>
+                         <span>•</span>
+                       </>
+                     )}
                      <span>{format(parseISO(doc.createdAt), "dd MMM, yyyy", {locale: ptBR})}</span>
                   </div>
                 </div>

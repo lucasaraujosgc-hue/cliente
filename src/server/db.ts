@@ -55,6 +55,9 @@ export async function initDb() {
         "read" boolean DEFAULT false NOT NULL
       );
     `);
+
+    // Add competence column to documents if it does not exist
+    await client.query(`ALTER TABLE "documents" ADD COLUMN IF NOT EXISTS "competence" text;`);
     
     // Check if empty, run seed
     const res = await client.query('SELECT count(*) FROM "clients"');

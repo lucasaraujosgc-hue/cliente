@@ -136,6 +136,36 @@ export function ClientDetail() {
 
       </div>
 
+      <div className="bg-white/80 backdrop-blur-xl border text-slate-900 border-white rounded-3xl overflow-hidden shadow-xl shadow-slate-200/50 mt-8">
+        <div className="px-6 py-4 border-b border-white bg-white/50 flex items-center justify-between">
+           <h3 className="font-semibold text-slate-800">Todos os Documentos do Cliente</h3>
+        </div>
+        <div className="divide-y divide-slate-100/50 max-h-[400px] overflow-auto">
+          {data.documents.length === 0 && (
+            <div className="p-8 text-center text-slate-500">Nenhum documento encontrado.</div>
+          )}
+          {data.documents.map((doc: any) => (
+            <div key={doc.id} className="p-4 px-6 hover:bg-white flex items-center justify-between">
+              <div className="flex items-center">
+                <div className={`w-10 h-10 rounded-full flex items-center justify-center mr-4 ${doc.uploadedBy === 'client' ? 'bg-amber-50 text-amber-600' : 'bg-blue-50 text-blue-600'}`}>
+                  {doc.uploadedBy === 'client' ? <UploadCloud className="w-5 h-5" /> : <MessageSquare className="w-5 h-5" />}
+                </div>
+                <div>
+                  <h4 className="text-sm font-medium text-slate-900">{doc.title} {doc.competence && `(Comp: ${doc.competence})`}</h4>
+                  <div className="text-xs text-slate-500 mt-1 flex gap-2 items-center">
+                     <span className="font-medium text-slate-700">Origem: {doc.uploadedBy === 'client' ? 'Cliente' : 'Contador'}</span>
+                     <span>•</span>
+                     <span>Status: {doc.status}</span>
+                     <span>•</span>
+                     <span>{format(parseISO(doc.createdAt), "dd MMM, yyyy", {locale: ptBR})}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
       <div className="bg-white/80 backdrop-blur-xl rounded-3xl border border-white shadow-xl shadow-slate-200/50 overflow-hidden p-6 mt-8">
         <div className="flex justify-between items-center mb-4">
           <h3 className="font-bold text-slate-800 text-sm">Integração API (Hash da Empresa)</h3>

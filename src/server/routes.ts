@@ -241,12 +241,13 @@ export function setupRoutes(app: Express) {
   // Upload file by client
   app.post("/api/client/upload", verifyClientAuth, async (req, res) => {
     const clientId = (req as any).user.clientId;
-    const { title, category } = req.body;
+    const { title, category, competence } = req.body;
     
     const [newDoc] = await db.insert(documents).values({
       clientId,
       title: title || `Documento ${category}`,
       category,
+      competence,
       status: "new",
       uploadedBy: "client",
     }).returning();

@@ -1,6 +1,8 @@
 import express from "express";
 import path from "path";
 import cors from "cors";
+import dotenv from "dotenv";
+dotenv.config();
 import { createServer as createViteServer } from "vite";
 import { setupRoutes } from "./src/server/routes";
 import { initDb } from "./src/server/db";

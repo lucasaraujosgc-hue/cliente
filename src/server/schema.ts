@@ -16,9 +16,10 @@ export const documents = pgTable('documents', {
   id: uuid('id').primaryKey().defaultRandom(),
   clientId: uuid('client_id').notNull().references(() => clients.id),
   title: text('title').notNull(),
-  category: text('category').notNull(), // taxes, payroll, company, other
+  category: text('category').notNull(), // taxes, payroll, company, other, bank_statement
+  competence: text('competence'), // "MM/YYYY" like "05/2026"
   dueDate: text('due_date'),
-  status: text('status').notNull(), // pending, paid
+  status: text('status').notNull(), // pending, paid, new, viewed
   uploadedBy: text('uploaded_by').notNull(), // accountant, client
   createdAt: timestamp('created_at').defaultNow().notNull(),
   fileUrl: text('file_url'),
