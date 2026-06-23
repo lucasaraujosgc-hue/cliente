@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef, FormEvent } from "react";
 import { useParams, Link } from "react-router-dom";
-import { ArrowLeft, Send, UploadCloud, MessageSquare, FileSpreadsheet, Edit3, DollarSign, Calendar, PlusCircle, Check } from "lucide-react";
+import { ArrowLeft, Send, UploadCloud, MessageSquare, FileSpreadsheet, Edit3, DollarSign, Calendar, PlusCircle, Check, Trash2, Download } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import * as XLSX from "xlsx";
