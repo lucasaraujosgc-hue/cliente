@@ -69,7 +69,80 @@ function verifyAccountantAuth(req: Request, res: Response, next: NextFunction) {
   }
 }
 
+import fs from "fs";
+import path from "path";
+
+// Define uploads directory
+const UPLOADS_DIR = path.join(process.cwd(), "uploads");
+if (!fs.existsSync(UPLOADS_DIR)) {
+  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+}
+
 export function setupRoutes(app: Express) {
+  // Webhook for receiving files from external systems
+  app.post("/api/webhook/receitas", async (req, res) => {
+    try {
+      const {
+        hash_empresa,
+        vencimento, // DD/MM/YYYY
+        categoria,
+        nome_arquivo,
+        arquivo_base64,
+        dados_extraidos
+      } = req.body;
+
+      if (!hash_empresa || !arquivo_base64) {
+        return res.status(400).json({ error: "hash_empresa and arquivo_base64 are required" });
+      }
+
+      // Find client
+      const clientList = await db.select().from(clients).where(eq(clients.integrationHash, hash_empresa));
+      if (clientList.length === 0) {
+        return res.status(404).json({ error: "Client not found using provided hash" });
+      }
+      const client = clientList[0];
+
+      // Save file
+      const buffer = Buffer.from(arquivo_base64, 'base64');
+      const safeFilename = `${Date.now()}_${nome_arquivo}`;
+      const filePath = path.join(UPLOADS_DIR, safeFilename);
+      fs.writeFileSync(filePath, buffer);
+
+      // Create document record
+      let competence = "";
+      if (vencimento) {
+        // Assume format DD/MM/YYYY and extract MM/YYYY
+        const parts = vencimento.split("/");
+        if (parts.length >= 2) {
+          competence = `${parts[1]}/${parts.length === 3 ? parts[2] : new Date().getFullYear()}`;
+        }
+      }
+
+      // We might store extra data like 'dados_extraidos' inside document note or title, but we can just save it to DB
+      // the schema for documents does not have a JSON field except maybe just title/category
+      let titleStr = categoria === 'SITFIS_RECEITA' ? `SitFis Extração` : `Webhook ${categoria}`;
+      if (dados_extraidos && Array.isArray(dados_extraidos) && dados_extraidos.length > 0) {
+         titleStr += ` - ${dados_extraidos[0].orgao}: ${dados_extraidos[0].status}`;
+      }
+      
+      const newDoc = await db.insert(documents).values({
+        clientId: client.id,
+        title: titleStr,
+        category: categoria || "webhook_doc",
+        competence: competence || "00/0000",
+        dueDate: vencimento || null,
+        fileUrl: `/uploads/${safeFilename}`,
+        status: "new",
+        uploadedBy: "accountant" // As it comes from integration system
+      }).returning();
+
+      res.status(200).json({ success: true, documentId: newDoc[0].id });
+    } catch (e: any) {
+      console.error("Webhook Error:", e);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   // -------------------------------------------------------------
   // AUTH
   // -------------------------------------------------------------
@@ -500,6 +573,35 @@ export function setupRoutes(app: Express) {
     res.json({ success: true });
   });
   
+  app.post("/api/accountant/document/:id/status", verifyAccountantAuth, async (req, res) => {
+    try {
+      const { status } = req.body;
+      await db.update(documents).set({ status }).where(eq(documents.id, req.params.id));
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.delete("/api/accountant/message/:id", verifyAccountantAuth, async (req, res) => {
+    try {
+      await db.delete(messages).where(eq(messages.id, req.params.id));
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.put("/api/accountant/message/:id", verifyAccountantAuth, async (req, res) => {
+    try {
+      const { content } = req.body;
+      await db.update(messages).set({ content }).where(eq(messages.id, req.params.id));
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
   app.post("/api/accountant/client/:id/generate-token", verifyAccountantAuth, async (req, res) => {
      const clientId = req.params.id;
      const clientList = await db.select().from(clients).where(eq(clients.id, clientId));

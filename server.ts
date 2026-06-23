@@ -12,7 +12,8 @@ async function startServer() {
   const PORT = 3000;
 
   app.use(cors());
-  app.use(express.json());
+  app.use(express.json({ limit: '50mb' }));
+  app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
 
   // Wait for async initialization if needed (e.g. SQLite connection or checking db files)
   await initDb();

@@ -388,6 +388,19 @@ export function ClientDashboard() {
         </div>
       </header>
 
+          {/* SATELLITE COMMUNICATIONS FROM ACCOUNTANT */}
+          {data.messages && data.messages.filter((m: any) => !m.read).map((msg: any) => (
+            <div key={msg.id} className="bg-indigo-50/70 dark:bg-slate-800/40 backdrop-blur-md border border-indigo-100/40 dark:border-slate-700/60 rounded-3xl p-4 flex items-start shadow-xs">
+              <Bell className="text-indigo-500 dark:text-indigo-400 w-5 h-5 mt-0.5 mr-3 shrink-0" />
+              <div>
+                <h4 className="font-bold text-indigo-950 dark:text-indigo-300 text-sm">Mensagem do Contador</h4>
+                <p className="text-slate-600 dark:text-slate-300 text-xs mt-1 leading-relaxed">{msg.content}</p>
+                <span className="text-[10px] text-slate-400 mt-2 block font-mono">{format(parseISO(msg.createdAt), "dd MMM, HH:mm", { locale: ptBR })}</span>
+              </div>
+            </div>
+          ))}
+
+
           {/* 🚨 DEDICATED HIGH-VISIBILITY DUE DATE SECTION (VENCIMENTOS) */}
           <div className="bg-white/80 dark:bg-slate-800/90 backdrop-blur-lg rounded-3xl border border-slate-150/80 dark:border-slate-800/80 p-6 shadow-sm">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-700/50 gap-2 mb-4">
@@ -603,7 +616,7 @@ export function ClientDashboard() {
           {/* UPLOAD & DATA ENTRY AREA */}
           <div className="bg-white/85 dark:bg-slate-800/95 backdrop-blur-md border border-slate-100 dark:border-slate-800 rounded-3xl p-6 shadow-sm flex flex-col justify-center">
             <h3 className="font-bold text-slate-800 dark:text-white mb-1">Inserir Dados da Competência {selectedCompetence}</h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mb-5">Selecione o extrato bancário ou declare os lucros e despesas de serviço do seu negócio.</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mb-5">Selecione o extrato bancário do seu negócio. Apenas formato PDF ou OFX.</p>
             
             <div className="flex flex-col sm:flex-row gap-3">
                {hasBankStatement ? (
@@ -618,69 +631,13 @@ export function ClientDashboard() {
                       onClick={() => fileInputRef.current?.click()} 
                       className="w-full min-h-[44px] px-4 py-3 bg-slate-900 dark:bg-slate-700 text-white text-sm font-bold rounded-2xl shadow-sm hover:bg-slate-800 dark:hover:bg-slate-600 transition-colors flex items-center justify-center disabled:opacity-50"
                     >
-                      <Upload className="w-4 h-4 mr-2" /> {isUploading ? "Enviando extrato..." : "Upload Extrato Bancário"}
+                      <Upload className="w-4 h-4 mr-2" /> {isUploading ? "Enviando extrato..." : "Upload Extrato Bancário (PDF/OFX)"}
                     </button>
                   </div>
                 )}
-                
-                <div className="flex-1">
-                   <input type="file" ref={excelFileRef} className="hidden" accept=".xlsx,.xls,.csv" onChange={handleExcelImport} />
-                   <button 
-                     onClick={() => excelFileRef.current?.click()} 
-                     className="w-full min-h-[44px] px-4 py-3 bg-teal-600 text-white text-sm font-bold rounded-2xl shadow-sm hover:bg-teal-700 transition-colors flex items-center justify-center"
-                   >
-                     <FileSpreadsheet className="w-4 h-4 mr-2" /> Importar Excel (.xlsx)
-                   </button>
-                </div>
-                
-                <div className="flex-1">
-                   <button 
-                     onClick={() => setShowBillingForm(!showBillingForm)} 
-                     className="w-full min-h-[44px] px-4 py-3 border-2 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-sm font-bold rounded-2xl hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors flex items-center justify-center"
-                   >
-                     <Edit3 className="w-4 h-4 mr-2" /> Declarar Manualmente
-                   </button>
-                </div>
              </div>
-
-             {showBillingForm && (
-              <form onSubmit={saveBillingData} className="bg-slate-50/50 dark:bg-slate-900/30 p-5 rounded-2xl border border-slate-200/40 dark:border-slate-800/60 mt-4 space-y-4 animate-in slide-in-from-top-2">
-                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1">Faturamento Serviços</label>
-                      <input type="number" step="any" value={billingForm.servicesRevenue} onChange={e => setBillingForm({ ...billingForm, servicesRevenue: Number(e.target.value) })} className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-800 dark:text-white" />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1">Faturamento Vendas</label>
-                      <input type="number" step="any" value={billingForm.salesRevenue} onChange={e => setBillingForm({ ...billingForm, salesRevenue: Number(e.target.value) })} className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-800 dark:text-white" />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1">Serviços Tomados</label>
-                      <input type="number" step="any" value={billingForm.servicesTaken} onChange={e => setBillingForm({ ...billingForm, servicesTaken: Number(e.target.value) })} className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-800 dark:text-white" />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1">Total Entradas</label>
-                      <input type="number" step="any" value={billingForm.totalIncomes} onChange={e => setBillingForm({ ...billingForm, totalIncomes: Number(e.target.value) })} className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-800 dark:text-white" />
-                    </div>
-                 </div>
-                 <button type="submit" className="w-full py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-xl shadow-sm text-sm transition-all">
-                   Salvar Valores Contábeis
-                 </button>
-              </form>
-            )}
           </div>
 
-          {/* SATELLITE COMMUNICATIONS FROM ACCOUNTANT */}
-          {data.messages && data.messages.filter((m: any) => !m.read).map((msg: any) => (
-            <div key={msg.id} className="bg-indigo-50/70 dark:bg-slate-800/40 backdrop-blur-md border border-indigo-100/40 dark:border-slate-700/60 rounded-3xl p-4 flex items-start shadow-xs">
-              <Bell className="text-indigo-500 dark:text-indigo-400 w-5 h-5 mt-0.5 mr-3 shrink-0" />
-              <div>
-                <h4 className="font-bold text-indigo-950 dark:text-indigo-300 text-sm">Mensagem do Contador</h4>
-                <p className="text-slate-600 dark:text-slate-300 text-xs mt-1 leading-relaxed">{msg.content}</p>
-                <span className="text-[10px] text-slate-400 mt-2 block font-mono">{format(parseISO(msg.createdAt), "dd MMM, HH:mm", { locale: ptBR })}</span>
-              </div>
-            </div>
-          ))}
 
         </div>
 

@@ -1,12 +1,29 @@
 import { useState, useEffect, FormEvent } from "react";
-import { Folder, Receipt, FileIcon, Eye, Download, UploadCloud, Clock, AlertTriangle, CheckCircle } from "lucide-react";
-import { format, parseISO, differenceInDays } from "date-fns";
+import { Folder, Receipt, FileIcon, Eye, Download, UploadCloud, Clock, AlertTriangle, CheckCircle, ChevronLeft, ChevronRight } from "lucide-react";
+import { format, parseISO, differenceInDays, subMonths } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
 export function ClientVault() {
   const [docs, setDocs] = useState<any[]>([]);
-  const [activeTab, setActiveTab] = useState("taxes");
+  const [activeTab, setActiveTab] = useState("received");
+  const [selectedCompetence, setSelectedCompetence] = useState(format(subMonths(new Date(), 1), "MM/yyyy"));
   const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const availableCompetences = Array.from({ length: 24 }, (_, i) => format(subMonths(new Date(), i), "MM/yyyy"));
+
+  const handlePrevCompetence = () => {
+    const idx = availableCompetences.indexOf(selectedCompetence);
+    if (idx < availableCompetences.length - 1) {
+      setSelectedCompetence(availableCompetences[idx + 1]);
+    }
+  };
+
+  const handleNextCompetence = () => {
+    const idx = availableCompetences.indexOf(selectedCompetence);
+    if (idx > 0) {
+      setSelectedCompetence(availableCompetences[idx - 1]);
+    }
+  };
 
   const loadDocs = () => {
     fetch("/api/client/dashboard", {
@@ -39,13 +56,19 @@ export function ClientVault() {
   };
 
   const tabs = [
-    { id: "taxes", label: "Guias de Impostos", icon: Receipt },
-    { id: "payroll", label: "Folha/RH", icon: Folder },
+    { id: "received", label: "Recebidos", icon: Receipt },
     { id: "company", label: "Documentos Empresa", icon: FileIcon },
-    { id: "upload", label: "Meus Envios", icon: UploadCloud },
   ];
 
-  const filteredDocs = docs.filter(d => d.category === activeTab);
+  const filteredDocs = docs.filter(d => {
+    if (activeTab === "received") {
+      return (d.category === "taxes" || d.category === "payroll" || d.category === "webhook_doc" || d.category === "SITFIS_RECEITA") && d.competence === selectedCompetence;
+    }
+    if (activeTab === "company") {
+      return d.category === "company";
+    }
+    return d.category === activeTab;
+  });
 
   // Helper parser for Brazilian date strings DD/MM/YYYY
   const parseDueDate = (dateStr?: string) => {
@@ -145,22 +168,28 @@ export function ClientVault() {
         </div>
         
         <div className="p-4 sm:p-6">
-          {activeTab === "upload" && (
-            <div className="mb-6 p-5 bg-slate-50/50 dark:bg-slate-900/30 rounded-2xl border border-slate-200 dark:border-slate-700/60 border-dashed">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-750 dark:text-slate-300 mb-3">Enviar novo documento para o Contador</h3>
-              <form onSubmit={handleUpload} className="flex flex-col sm:flex-row gap-4 items-end">
-                <div className="w-full sm:flex-1">
-                  <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-1">Descrição / Finalidade do Arquivo</label>
-                  <input name="title" type="text" required placeholder="Ex: Extrato Bancário Conciliado Jan/2026" className="w-full h-10 px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-xl text-xs bg-white dark:bg-slate-800 text-slate-850 dark:text-white" />
-                </div>
-                <div className="w-full sm:flex-1">
-                  <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-1">Anexo Documento (Imagens ou PDF)</label>
-                  <input type="file" className="w-full text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-slate-100 dark:file:bg-slate-700 file:text-slate-700 dark:file:text-slate-350 hover:file:bg-slate-200" />
-                </div>
-                <button type="submit" className="w-full sm:w-auto h-10 bg-slate-900 hover:bg-slate-800 dark:bg-emerald-500 dark:hover:bg-emerald-600 text-white px-6 rounded-xl text-xs font-bold transition-all shrink-0">
-                  Enviar para Análise
+          {activeTab === "received" && (
+            <div className="mb-6 flex items-center gap-3">
+              <div className="flex items-center bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden h-10 w-[200px]">
+                <button 
+                  onClick={handlePrevCompetence}
+                  disabled={availableCompetences.indexOf(selectedCompetence) === availableCompetences.length - 1}
+                  className="px-3 h-full flex items-center justify-center text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-30 transition-colors"
+                >
+                   <ChevronLeft className="w-4 h-4" />
                 </button>
-              </form>
+                <div className="flex-1 flex flex-col items-center justify-center">
+                   <span className="text-[10px] font-semibold text-slate-400 leading-none mb-0.5">Competência</span>
+                   <span className="text-sm font-black text-slate-800 dark:text-white leading-none">{selectedCompetence}</span>
+                </div>
+                <button 
+                  onClick={handleNextCompetence}
+                  disabled={availableCompetences.indexOf(selectedCompetence) === 0}
+                  className="px-3 h-full flex items-center justify-center text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-30 transition-colors"
+                >
+                   <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
             </div>
           )}
 
@@ -168,12 +197,12 @@ export function ClientVault() {
             <div className="py-16 text-center text-slate-400/80">
               <Folder className="w-12 h-12 text-slate-300 dark:text-slate-650 mx-auto mb-3" />
               <p className="text-sm font-bold text-slate-700 dark:text-slate-300">Nenhum documento cadastrado</p>
-              <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">Sua contabilidade ainda não postou guias nesta categoria para a competência selecionada.</p>
+              <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">Sua contabilidade ainda não postou documentos nesta categoria.</p>
             </div>
           ) : (
             <div className="grid gap-3">
               {filteredDocs.map(doc => {
-                const highlights = getDueHighlight(doc);
+                const highlights = activeTab === "received" ? getDueHighlight(doc) : { borderStyle: "border-slate-200 dark:border-slate-800", badgeStyle: "hidden", text: "", isAlert: false };
 
                 return (
                   <div 
@@ -193,15 +222,21 @@ export function ClientVault() {
                       <div>
                         <div className="flex flex-wrap items-center gap-2">
                           <h4 className="font-bold text-slate-800 dark:text-white text-sm">{doc.title}</h4>
-                          <span className={`px-2 py-0.5 text-[9px] uppercase font-bold rounded-full ${highlights.badgeStyle}`}>
-                            {highlights.text}
-                          </span>
+                          {activeTab === "received" && (
+                            <span className={`px-2 py-0.5 text-[9px] uppercase font-bold rounded-full ${highlights.badgeStyle}`}>
+                              {highlights.text}
+                            </span>
+                          )}
                         </div>
                         <div className="text-[11px] text-slate-500 dark:text-slate-450 mt-1 flex flex-wrap gap-x-3 gap-y-0.5">
                           <span>Adicionado em: {format(parseISO(doc.createdAt), "dd/MM/yyyy", { locale: ptBR })}</span>
-                          <span>•</span>
-                          <span>Competência: {doc.competence || "Todos"}</span>
-                          {doc.dueDate && (
+                          {activeTab === "received" && (
+                            <>
+                              <span>•</span>
+                              <span>Competência: {doc.competence || "Todos"}</span>
+                            </>
+                          )}
+                          {doc.dueDate && activeTab === "received" && (
                             <>
                               <span>•</span>
                               <span className="flex items-center gap-1 font-semibold text-slate-700 dark:text-slate-350">
@@ -223,7 +258,7 @@ export function ClientVault() {
                           className="h-9 px-3 flex items-center justify-center bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 rounded-xl text-xs font-bold shadow-xs transition-colors"
                           title="Visualizar documento"
                         >
-                          <Eye className="w-3.5 h-3.5 mr-1" /> Ver Guia
+                          <Eye className="w-3.5 h-3.5 mr-1" /> Ver Arquivo
                         </a>
                       )}
                       
@@ -235,7 +270,7 @@ export function ClientVault() {
                           referrerPolicy="no-referrer"
                           rel="noreferrer"
                           className="h-9 w-9 flex items-center justify-center bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:bg-slate-50 rounded-xl shadow-xs transition-colors"
-                          title="Baixar PDF"
+                          title="Baixar Arquivo"
                         >
                           <Download className="w-3.5 h-3.5" />
                         </a>

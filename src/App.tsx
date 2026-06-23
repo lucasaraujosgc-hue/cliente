@@ -9,6 +9,7 @@ import { ClientLayout, AccountantLayout } from "./components/Layouts";
 import { Login, AccountantLogin } from "./pages/Auth";
 import { ClientDashboard } from "./pages/client/Dashboard";
 import { ClientVault } from "./pages/client/Vault";
+import { ClientUploads } from "./pages/client/MyUploads";
 import { SetupProfile } from "./pages/client/SetupProfile";
 import { AccountantDashboard } from "./pages/accountant/Dashboard";
 import { ClientsList } from "./pages/accountant/ClientsList";
@@ -30,7 +31,7 @@ export default function App() {
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
             <Route path="/dashboard" element={<ClientDashboard />} />
             <Route path="/vault" element={<ClientVault />} />
-            <Route path="/uploads" element={<Navigate to="/vault" replace />} />
+            <Route path="/uploads" element={<ClientUploads />} />
           </Route>
 
           {/* Accountant Routes */}
