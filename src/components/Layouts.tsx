@@ -29,6 +29,16 @@ export function ClientLayout() {
     }
   }, [user.email]);
 
+  useEffect(() => {
+    const handleOpenModal = () => {
+      setShowPasswordModal(true);
+    };
+    window.addEventListener("open-password-change-modal", handleOpenModal);
+    return () => {
+      window.removeEventListener("open-password-change-modal", handleOpenModal);
+    };
+  }, []);
+
   if (!token) {
     return <Navigate to="/login" replace />;
   }

@@ -174,6 +174,25 @@ export function ClientDashboard() {
         </div>
       </header>
 
+      {/* Senha aviso / CNPJ Alteração */}
+      <div className="bg-gradient-to-r from-slate-50 to-indigo-50 dark:from-slate-800/30 dark:to-slate-800/10 border border-slate-200/50 dark:border-slate-700/50 rounded-3xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm">
+        <div className="flex items-start sm:items-center">
+          <div className="p-2 bg-blue-500/10 text-blue-600 dark:text-blue-400 rounded-xl mr-3 shrink-0">
+            <Edit3 className="w-5 h-5" />
+          </div>
+          <div>
+            <h4 className="font-bold text-slate-800 dark:text-slate-200 text-sm">Configuração de Acesso</h4>
+            <p className="text-slate-500 dark:text-slate-400 text-xs mt-0.5">Seu login e senha padrão de acesso ao portal do cliente são o seu CNPJ. Altere suas credenciais na aba correspondente clicando ao lado.</p>
+          </div>
+        </div>
+        <button 
+          onClick={() => window.dispatchEvent(new CustomEvent("open-password-change-modal"))}
+          className="px-4 py-2 text-xs font-bold rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-virgula-green dark:hover:bg-emerald-600 text-white transition-colors flex items-center justify-center shrink-0 self-start sm:self-center"
+        >
+          Alterar Senha de Acesso
+        </button>
+      </div>
+
       {/* Alertas e Upload de Faturamento */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="col-span-1 md:col-span-2 space-y-4">

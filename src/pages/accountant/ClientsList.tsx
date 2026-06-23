@@ -71,6 +71,7 @@ export function ClientsList() {
               <div>
                 <label className="block text-xs font-semibold text-slate-600 mb-1">CNPJ</label>
                 <input required type="text" value={newClient.cnpj} onChange={(e) => setNewClient({...newClient, cnpj: e.target.value})} className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-slate-50 focus:bg-white" placeholder="00.000.000/0001-00" />
+                <span className="text-[10px] text-slate-400 mt-1 block">ℹ️ O login e a senha inicial de acesso do cliente serão este CNPJ.</span>
               </div>
               <div>
                 <label className="block text-xs font-semibold text-slate-600 mb-1">Razão Social</label>
