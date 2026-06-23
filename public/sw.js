@@ -28,3 +28,36 @@ self.addEventListener('fetch', (e) => {
     })
   );
 });
+
+self.addEventListener('push', function(e) {
+  let data = { title: "Nova Notificação", body: "Você tem um novo alerta!" };
+  if (e.data) {
+    try {
+      data = e.data.json();
+    } catch(err) {
+      data.body = e.data.text();
+    }
+  }
+
+  const options = {
+    body: data.body,
+    icon: '/icon.png',
+    badge: '/icon.png',
+    vibrate: [100, 50, 100],
+    data: {
+      dateOfArrival: Date.now(),
+      primaryKey: '2'
+    }
+  };
+
+  e.waitUntil(
+    self.registration.showNotification(data.title, options)
+  );
+});
+
+self.addEventListener('notificationclick', function(e) {
+  e.notification.close();
+  e.waitUntil(
+    clients.openWindow('/')
+  );
+});

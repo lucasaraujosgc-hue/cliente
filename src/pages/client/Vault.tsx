@@ -5,7 +5,7 @@ import { ptBR } from "date-fns/locale";
 
 export function ClientVault() {
   const [docs, setDocs] = useState<any[]>([]);
-  const [activeTab, setActiveTab] = useState("received");
+  const [activeTab, setActiveTab] = useState("company");
   const [selectedCompetence, setSelectedCompetence] = useState(format(subMonths(new Date(), 1), "MM/yyyy"));
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
@@ -56,7 +56,6 @@ export function ClientVault() {
   };
 
   const tabs = [
-    { id: "received", label: "Recebidos", icon: Receipt },
     { id: "company", label: "Documentos Empresa", icon: FileIcon },
   ];
 

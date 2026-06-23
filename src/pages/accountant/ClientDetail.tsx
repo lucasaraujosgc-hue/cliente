@@ -313,6 +313,16 @@ export function ClientDetail() {
 
         {showBillingForm && (
            <form onSubmit={handleSaveBilling} className="p-6 border-b border-slate-100 bg-slate-50/50 space-y-4 animate-in slide-in-from-top duration-200">
+              <div className="flex justify-between items-center mb-2">
+                 <span className="text-xs text-slate-500 font-semibold">Preencha os valores (permite zerados):</span>
+                 <a 
+                   href="data:text/csv;charset=utf-8,Competencia,FaturamentoServico,FaturamentoVenda,TotalEntradas,ServicosTomados%0A06/2026,0,0,0,0" 
+                   download="modelo_importacao.csv"
+                   className="text-xs text-virgula-green hover:underline font-bold"
+                 >
+                   Baixar Modelo CSV
+                 </a>
+              </div>
               <div className="grid grid-cols-1 sm:grid-cols-5 gap-4">
                  <div>
                     <label className="block text-xs font-semibold text-slate-500 mb-1">Competência (MM/AAAA)</label>
@@ -332,8 +342,8 @@ export function ClientDetail() {
                       step="0.01"
                       required
                       placeholder="0.00"
-                      value={billingForm.servicesRevenue || ""}
-                      onChange={e => setBillingForm({...billingForm, servicesRevenue: Number(e.target.value)})}
+                      value={billingForm.servicesRevenue}
+                      onChange={e => setBillingForm({...billingForm, servicesRevenue: e.target.value ? Number(e.target.value) : 0})}
                       className="w-full px-3 py-2 border border-slate-200 bg-white rounded-lg text-sm outline-none focus:ring-2 focus:ring-virgula-green"
                     />
                  </div>
@@ -344,8 +354,8 @@ export function ClientDetail() {
                       step="0.01"
                       required
                       placeholder="0.00"
-                      value={billingForm.salesRevenue || ""}
-                      onChange={e => setBillingForm({...billingForm, salesRevenue: Number(e.target.value)})}
+                      value={billingForm.salesRevenue}
+                      onChange={e => setBillingForm({...billingForm, salesRevenue: e.target.value ? Number(e.target.value) : 0})}
                       className="w-full px-3 py-2 border border-slate-200 bg-white rounded-lg text-sm outline-none focus:ring-2 focus:ring-virgula-green"
                     />
                  </div>
@@ -356,8 +366,8 @@ export function ClientDetail() {
                       step="0.01"
                       required
                       placeholder="0.00"
-                      value={billingForm.totalIncomes || ""}
-                      onChange={e => setBillingForm({...billingForm, totalIncomes: Number(e.target.value)})}
+                      value={billingForm.totalIncomes}
+                      onChange={e => setBillingForm({...billingForm, totalIncomes: e.target.value ? Number(e.target.value) : 0})}
                       className="w-full px-3 py-2 border border-slate-200 bg-white rounded-lg text-sm outline-none focus:ring-2 focus:ring-virgula-green"
                     />
                  </div>
@@ -368,8 +378,8 @@ export function ClientDetail() {
                       step="0.01"
                       required
                       placeholder="0.00"
-                      value={billingForm.servicesTaken || ""}
-                      onChange={e => setBillingForm({...billingForm, servicesTaken: Number(e.target.value)})}
+                      value={billingForm.servicesTaken}
+                      onChange={e => setBillingForm({...billingForm, servicesTaken: e.target.value ? Number(e.target.value) : 0})}
                       className="w-full px-3 py-2 border border-slate-200 bg-white rounded-lg text-sm outline-none focus:ring-2 focus:ring-virgula-green"
                     />
                  </div>

@@ -14,6 +14,7 @@ import { SetupProfile } from "./pages/client/SetupProfile";
 import { AccountantDashboard } from "./pages/accountant/Dashboard";
 import { ClientsList } from "./pages/accountant/ClientsList";
 import { ClientDetail } from "./pages/accountant/ClientDetail";
+import { AccountantNotifications } from "./pages/accountant/Notifications";
 
 export default function App() {
   return (
@@ -39,6 +40,7 @@ export default function App() {
             <Route index element={<AccountantDashboard />} />
             <Route path="clients" element={<ClientsList />} />
             <Route path="client/:id" element={<ClientDetail />} />
+            <Route path="notifications" element={<AccountantNotifications />} />
           </Route>
         </Routes>
       </BrowserRouter>

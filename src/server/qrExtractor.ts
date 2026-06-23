@@ -15,11 +15,12 @@ export async function extractPixCodeFromPdf(buffer: Buffer): Promise<string | nu
         // 1. First try simple text extraction (for "Pix Copia e Cola" text often found next to the QR Code)
         const textContent = await page.getTextContent();
         const fullText = textContent.items.map((item: any) => item.str).join('');
+        const cleanText = fullText.replace(/\s+/g, '');
         
         // Match PIX Code pattern (starts with 000201 and has normal PIX length)
         // Pix BR Code regex (simple check)
-        const pixRegex = /000201[A-Za-z0-9]{30,}/;
-        const match = fullText.match(pixRegex);
+        const pixRegex = /000201[A-Za-z0-9\-\.]{30,}/;
+        const match = cleanText.match(pixRegex);
         if (match) {
             return match[0];
         }

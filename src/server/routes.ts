@@ -5,7 +5,28 @@ import crypto from "crypto";
 import nodemailer from "nodemailer";
 import multer from "multer";
 import { db } from "./db";
-import { clients, documents, billingData, messages } from "./schema";
+import { clients, documents, billingData, messages, subscriptions } from "./schema";
+import webpush from "web-push";
+
+// Generate VAPID keys if they don't exist in env. For development, we can generate them on the fly if needed.
+// Usually you'd store these in .env
+let vapidKeys = {
+  publicKey: process.env.VAPID_PUBLIC_KEY || '',
+  privateKey: process.env.VAPID_PRIVATE_KEY || ''
+};
+
+if (!vapidKeys.publicKey || !vapidKeys.privateKey) {
+  vapidKeys = webpush.generateVAPIDKeys();
+  console.log("Generated new VAPID keys for this session (they won't persist after restart):");
+  console.log("Public Key:", vapidKeys.publicKey);
+  console.log("Private Key:", vapidKeys.privateKey);
+}
+
+webpush.setVapidDetails(
+  'mailto:lucasdocarbono@gmail.com',
+  vapidKeys.publicKey,
+  vapidKeys.privateKey
+);
 import { eq, desc, asc } from "drizzle-orm";
 import fs from "fs";
 import path from "path";
@@ -157,6 +178,7 @@ export function setupRoutes(app: Express) {
         dueDate: vencimento || null,
         fileUrl: safeFilename ? `/uploads/${safeFilename}` : null,
         pixCode: pixCode,
+        extractedData: dados_extraidos || null,
         status: "new",
         uploadedBy: "accountant" // As it comes from integration system
       }).returning();
@@ -780,6 +802,55 @@ export function setupRoutes(app: Express) {
       res.json({ success: true });
     } catch (e: any) {
       res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/vapidPublicKey", (req, res) => {
+    res.send(vapidKeys.publicKey);
+  });
+
+  app.post("/api/notifications/subscribe", verifyClientAuth, async (req, res) => {
+    try {
+      const clientId = (req as any).user.clientId;
+      const { subscriptionObject, deviceName } = req.body;
+      
+      await db.insert(subscriptions).values({
+        clientId,
+        subscriptionObject,
+        deviceName: deviceName || "Dispositivo"
+      });
+      res.status(201).json({ success: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/admin/notifications/send", verifyAccountantAuth, async (req, res) => {
+    try {
+      const { userId, title, body } = req.body;
+      
+      let subs = [];
+      if (userId) {
+        subs = await db.select().from(subscriptions).where(eq(subscriptions.clientId, userId));
+      } else {
+        subs = await db.select().from(subscriptions);
+      }
+      
+      const payload = JSON.stringify({ title, body });
+      
+      const promises = subs.map(sub => {
+        return webpush.sendNotification(sub.subscriptionObject as webpush.PushSubscription, payload).catch(err => {
+          console.error("Error sending push to sub:", sub.id, err);
+          if (err.statusCode === 410 || err.statusCode === 404) {
+             return db.delete(subscriptions).where(eq(subscriptions.id, sub.id));
+          }
+        });
+      });
+      
+      await Promise.all(promises);
+      res.status(200).json({ success: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
     }
   });
 

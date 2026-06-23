@@ -19,7 +19,8 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
-  Eye
+  Eye,
+  X
 } from "lucide-react";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Legend } from "recharts";
 import { format, parse, subMonths, isBefore, isAfter, isEqual, parseISO, differenceInDays } from "date-fns";
@@ -41,6 +42,7 @@ export function ClientDashboard() {
 
   const [billingForm, setBillingForm] = useState({ servicesRevenue: 0, salesRevenue: 0, totalIncomes: 0, servicesTaken: 0 });
   const [showBillingForm, setShowBillingForm] = useState(false);
+  const [showSitFisModal, setShowSitFisModal] = useState(false);
 
   const loadData = async () => {
     setIsRefreshing(true);
@@ -85,9 +87,59 @@ export function ClientDashboard() {
     }
   }, [selectedCompetence]);
 
+  const subscribeToPush = async () => {
+    try {
+      const token = localStorage.getItem("clientToken") || sessionStorage.getItem("clientToken");
+      if (!("serviceWorker" in navigator) || !("PushManager" in window)) return;
+      
+      const registration = await navigator.serviceWorker.ready;
+      
+      // Get public key
+      const response = await fetch("/api/vapidPublicKey");
+      const vapidPublicKey = await response.text();
+      const convertedVapidKey = urlBase64ToUint8Array(vapidPublicKey);
+
+      const subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: convertedVapidKey
+      });
+
+      await fetch("/api/notifications/subscribe", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          subscriptionObject: subscription,
+          deviceName: navigator.userAgent
+        })
+      });
+      console.log("Push notifications subscribed!");
+    } catch (e) {
+      console.error("Failed to subscribe to push notifications", e);
+    }
+  };
+
   useEffect(() => {
     loadData();
+    subscribeToPush();
   }, []);
+
+  function urlBase64ToUint8Array(base64String: string) {
+    const padding = '='.repeat((4 - base64String.length % 4) % 4);
+    const base64 = (base64String + padding)
+      .replace(/\-/g, '+')
+      .replace(/_/g, '/');
+
+    const rawData = window.atob(base64);
+    const outputArray = new Uint8Array(rawData.length);
+
+    for (let i = 0; i < rawData.length; ++i) {
+      outputArray[i] = rawData.charCodeAt(i);
+    }
+    return outputArray;
+  }
 
   const handleUploadBankStatement = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -276,6 +328,9 @@ export function ClientDashboard() {
   const allCurrentDocs = data.documents.filter((d: any) => 
     d.competence === selectedCompetence && d.category !== "bank_statement"
   );
+  
+  const sitFisDoc = data.documents.find((d: any) => d.category === 'SITFIS_RECEITA' && d.extractedData);
+  const hasPendingSitFis = sitFisDoc?.extractedData?.some((d: any) => String(d.status).toUpperCase() === "PENDENTE");
 
   // Filter pending ones explicitly
   const pendingDocs = allCurrentDocs.filter((d: any) => d.status !== "paid");
@@ -468,8 +523,8 @@ export function ClientDashboard() {
 
                           <div>
                             <div className="flex flex-wrap items-center gap-2">
-                              <h4 className="font-bold text-slate-800 dark:text-slate-100 text-sm">
-                                {doc.title}
+                              <h4 className="font-bold text-slate-800 dark:text-slate-100 text-sm capitalize">
+                                {doc.category === 'taxes' ? 'Impostos' : doc.category === 'payroll' ? 'Folha' : (doc.category || 'Geral')}
                               </h4>
                               <span className={`px-2 py-0.5 text-[9px] font-extrabold uppercase rounded-full ${dueInfo.colorClass}`}>
                                 {dueInfo.label}
@@ -481,7 +536,7 @@ export function ClientDashboard() {
                                 <Calendar className="w-3 h-3 text-slate-400" /> Vencimento: <strong className="text-slate-700 dark:text-slate-300 font-extrabold">{doc.dueDate || "N/D"}</strong>
                               </span>
                               <span>•</span>
-                              <span className="capitalize font-medium">Pasta: {doc.category === 'taxes' ? 'Impostos' : doc.category === 'payroll' ? 'Folha' : 'Geral'}</span>
+                              <span className="font-medium">Arquivo: {doc.title || "Documento"}</span>
                             </div>
                           </div>
                         </div>
@@ -586,20 +641,25 @@ export function ClientDashboard() {
         </div>
 
         {/* Stat 3: Situação Fiscal */}
-        <div className="bg-white dark:bg-slate-800/90 border border-slate-100 dark:border-slate-800 p-5 rounded-3xl shadow-sm hover:shadow-md transition-shadow flex items-center justify-between">
+        <div 
+          className={`bg-white dark:bg-slate-800/90 border border-slate-100 dark:border-slate-800 p-5 rounded-3xl shadow-sm transition-shadow flex items-center justify-between ${hasPendingSitFis ? 'cursor-pointer hover:shadow-md ring-2 ring-red-500/20' : 'hover:shadow-md'}`}
+          onClick={() => {
+             if (hasPendingSitFis) setShowSitFisModal(true);
+          }}
+        >
           <div className="space-y-1">
             <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">SITUAÇÃO PERANTE À RECEITA</p>
             <h3 className="text-lg font-extrabold text-slate-900 dark:text-white flex items-center gap-1.5">
-              {data.client.regularityStatus === "green" ? (
-                <span className="text-emerald-600 dark:text-emerald-400 flex items-center gap-1">Regular 🟢</span>
+              {hasPendingSitFis ? (
+                <span className="text-red-500 dark:text-red-400 flex items-center gap-1 cursor-pointer underline decoration-dotted">Restrições 🔴</span>
               ) : (
-                <span className="text-red-500 dark:text-red-400 flex items-center gap-1">Restrições 🔴</span>
+                <span className="text-emerald-600 dark:text-emerald-400 flex items-center gap-1">Regular 🟢</span>
               )}
             </h3>
             <p className="text-[10px] text-slate-500">Cadastro de CNPJ e regularidade</p>
           </div>
-          <div className={`p-3 rounded-2xl ${data.client.regularityStatus === "green" ? "bg-emerald-500/10 text-emerald-500" : "bg-red-500/10 text-red-500"}`}>
-            <CheckCircle className="w-5 h-5" />
+          <div className={`p-3 rounded-2xl ${hasPendingSitFis ? "bg-red-500/10 text-red-500" : "bg-emerald-500/10 text-emerald-500"}`}>
+            {hasPendingSitFis ? <AlertCircle className="w-5 h-5 animate-pulse" /> : <CheckCircle className="w-5 h-5" />}
           </div>
         </div>
       </div>
@@ -662,39 +722,6 @@ export function ClientDashboard() {
         {/* COLUMN 3 */}
         <div className="space-y-6">
           
-          {/* RECEITA FEDERAL STATUS */}
-          <div className="bg-white/80 dark:bg-slate-800/80 backdrop-blur-xl rounded-3xl border border-slate-100 dark:border-slate-700 p-6 shadow-sm">
-            <h3 className="text-[10px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-4">Situação Fiscal da Empresa</h3>
-            {data.client.regularityStatus === "green" ? (
-               <div className="text-center p-4">
-                 <CheckCircle className="w-16 h-16 text-emerald-400 drop-shadow-[0_0_12px_rgba(52,211,153,0.5)] mx-auto mb-4" />
-                 <h4 className="text-slate-800 dark:text-white font-extrabold text-sm">Situação perante à Receita: Regular 🟢</h4>
-                 <p className="text-[11px] text-slate-400 mt-2">Sem pendências registradas com o CNPJ no banco de dados sincronizado.</p>
-               </div>
-            ) : (
-               <div className="space-y-3 w-full">
-                  <div className="text-center py-2 border-b border-slate-100 dark:border-slate-700">
-                     <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-2 animate-pulse" />
-                     <span className="text-sm font-extrabold text-red-600 dark:text-red-400 block mt-2">Atenção: Pendências detectadas 🔴</span>
-                  </div>
-                  <div className="text-xs text-slate-600 dark:text-slate-400 space-y-2 mt-2 text-left">
-                     <p className="font-semibold text-slate-700 dark:text-slate-300">Detalhamento das pendências:</p>
-                     {pendingDocs.length > 0 ? (
-                        <ul className="list-disc pl-4 space-y-1.5 text-slate-600 dark:text-slate-350">
-                           {pendingDocs.map((doc: any) => (
-                              <li key={doc.id}>
-                                 <span className="font-medium text-slate-800 dark:text-slate-200">{doc.title}</span> {doc.dueDate && `(Vence em: ${doc.dueDate})`}
-                              </li>
-                           ))}
-                        </ul>
-                     ) : (
-                        <p className="italic text-slate-500 dark:text-slate-400">Existem pendências burocráticas sob análise da Receita Federal. Contate o suporte do contador no mural para mais detalhes.</p>
-                     )}
-                  </div>
-               </div>
-             )}
-          </div>
-
           {/* PLANTÃO CONTÁBIL */}
           <div className="bg-slate-900 text-white rounded-3xl p-6 relative overflow-hidden shadow-md">
             <div className="absolute top-0 right-0 p-12 bg-white/5 rounded-full translate-x-8 -translate-y-8 pointer-events-none"></div>
@@ -763,6 +790,69 @@ export function ClientDashboard() {
         </div>
 
       </div>
+
+      {showSitFisModal && sitFisDoc && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-slate-900 w-full max-w-2xl rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col max-h-[90vh]">
+             <div className="flex items-center justify-between p-5 border-b border-slate-100 dark:border-slate-800">
+                <div>
+                   <h2 className="text-lg font-bold text-slate-800 dark:text-white">Saúde Fiscal Detalhada</h2>
+                   <p className="text-xs text-slate-500 uppercase">{data.client.companyName} ({data.client.cnpj})</p>
+                </div>
+                <button 
+                  onClick={() => setShowSitFisModal(false)}
+                  className="p-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 rounded-xl transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+             </div>
+             
+             <div className="p-6 overflow-y-auto space-y-4">
+                {sitFisDoc.extractedData.map((item: any, idx: number) => {
+                   const isPending = String(item.status).toUpperCase() === "PENDENTE";
+                   return (
+                      <div key={idx} className="border border-slate-100 dark:border-slate-800 rounded-xl p-4 bg-slate-50/50 dark:bg-slate-800/20">
+                         <div className="flex items-center justify-between mb-2">
+                            <h4 className="font-bold text-slate-700 dark:text-slate-300 flex items-center gap-2">
+                               {isPending ? <AlertCircle className="w-4 h-4 text-red-500" /> : <CheckCircle className="w-4 h-4 text-emerald-500" />}
+                               {item.orgao || "Situação"}
+                            </h4>
+                            <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${isPending ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                               {item.status || (isPending ? "Pendente" : "Regular")}
+                            </span>
+                         </div>
+                         {item.descricao && (
+                           <p className="text-sm text-slate-600 dark:text-slate-400 mt-2">
+                             {item.descricao}
+                           </p>
+                         )}
+                         {item.competencias && (
+                           <div className="mt-3 flex flex-wrap gap-2">
+                             {item.competencias.map((comp: string, i: number) => (
+                               <span key={i} className="px-2 py-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-medium text-slate-500">
+                                 {comp}
+                               </span>
+                             ))}
+                           </div>
+                         )}
+                      </div>
+                   )
+                })}
+                <div className="text-right">
+                  <p className="text-[10px] text-slate-400 mt-2">Atualizado em: {format(parseISO(sitFisDoc.createdAt), "dd/MM/yyyy HH:mm:ss")}</p>
+                </div>
+             </div>
+             <div className="p-4 border-t border-slate-100 dark:border-slate-800 flex justify-end">
+                <button 
+                  onClick={() => setShowSitFisModal(false)}
+                  className="px-4 py-2 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-semibold text-sm rounded-xl transition-colors"
+                >
+                  Fechar Detalhes
+                </button>
+             </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

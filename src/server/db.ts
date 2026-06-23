@@ -64,6 +64,17 @@ export async function initDb() {
     await client.query(`ALTER TABLE "billing_data" ADD COLUMN IF NOT EXISTS "services_taken" integer DEFAULT 0 NOT NULL;`);
     await client.query(`ALTER TABLE "documents" ADD COLUMN IF NOT EXISTS "competence" text;`);
     await client.query(`ALTER TABLE "documents" ADD COLUMN IF NOT EXISTS "pix_code" text;`);
+    await client.query(`ALTER TABLE "documents" ADD COLUMN IF NOT EXISTS "extracted_data" jsonb;`);
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS "subscriptions" (
+        "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        "client_id" uuid NOT NULL REFERENCES "clients"("id"),
+        "subscription_object" jsonb NOT NULL,
+        "device_name" text,
+        "created_at" timestamp DEFAULT now() NOT NULL
+      );
+    `);
 
     // Remove test companies
     await client.query(`DELETE FROM "clients" WHERE cnpj IN ('12.345.678/0001-99', '98.765.432/0001-11');`);

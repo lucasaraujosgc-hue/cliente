@@ -25,6 +25,7 @@ export const documents = pgTable('documents', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
   fileUrl: text('file_url'),
   pixCode: text('pix_code'),
+  extractedData: json('extracted_data'),
 });
 
 export const billingData = pgTable('billing_data', {
@@ -48,6 +49,14 @@ export const messages = pgTable('messages', {
   content: text('content').notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   read: boolean('read').default(false).notNull(),
+});
+
+export const subscriptions = pgTable('subscriptions', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  clientId: uuid('client_id').references(() => clients.id).notNull(),
+  subscriptionObject: json('subscription_object').notNull(),
+  deviceName: text('device_name'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
 export const clientsRelations = relations(clients, ({ many }) => ({

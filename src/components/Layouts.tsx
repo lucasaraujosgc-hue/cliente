@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Outlet, Navigate, Link, useLocation, useNavigate } from "react-router-dom";
-import { LayoutDashboard, Folder, Upload, LogOut, Settings, Users, Calculator, Menu, Pin, X } from "lucide-react";
+import { LayoutDashboard, Folder, Upload, LogOut, Settings, Users, Calculator, Menu, Pin, X, Bell } from "lucide-react";
 import { cn } from "../lib/utils";
 import { ThemeToggle } from "./ThemeToggle";
 
@@ -294,6 +294,7 @@ export function AccountantLayout() {
   const menu = [
     { name: "Inbox", path: "/admin", icon: Upload },
     { name: "Clientes", path: "/admin/clients", icon: Users },
+    { name: "Notificações", path: "/admin/notifications", icon: Bell },
   ];
 
   const renderSidebarContent = () => (
