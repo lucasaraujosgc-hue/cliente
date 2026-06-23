@@ -1,11 +1,9 @@
-import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
-import { createCanvas } from 'canvas';
-import jsQR from 'jsqr';
+import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
 
 export async function extractPixCodeFromPdf(buffer: Buffer): Promise<string | null> {
   try {
     const data = new Uint8Array(buffer);
-    const loadingTask = getDocument({ data, disableFontFace: true, disableRange: true });
+    const loadingTask = pdfjsLib.getDocument({ data, disableFontFace: true, disableRange: true });
     const pdfDocument = await loadingTask.promise;
     
     // Check up to first 3 pages
@@ -13,23 +11,19 @@ export async function extractPixCodeFromPdf(buffer: Buffer): Promise<string | nu
     
     for (let i = 1; i <= numPages; i++) {
         const page = await pdfDocument.getPage(i);
-        const viewport = page.getViewport({ scale: 1.5 });
         
-        const canvas = createCanvas(viewport.width, viewport.height);
-        const ctx = canvas.getContext('2d');
+        // 1. First try simple text extraction (for "Pix Copia e Cola" text often found next to the QR Code)
+        const textContent = await page.getTextContent();
+        const fullText = textContent.items.map((item: any) => item.str).join('');
         
-        await page.render({
-            canvasContext: ctx as any,
-            viewport: viewport
-        }).promise;
-        
-        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        // Ensure data is properly structured for jsQR
-        const code = jsQR(new Uint8ClampedArray(imageData.data.buffer), imageData.width, imageData.height);
-        
-        if (code && code.data && code.data.startsWith('000201')) {
-            return code.data;
+        // Match PIX Code pattern (starts with 000201 and has normal PIX length)
+        // Pix BR Code regex (simple check)
+        const pixRegex = /000201[A-Za-z0-9]{30,}/;
+        const match = fullText.match(pixRegex);
+        if (match) {
+            return match[0];
         }
+        
     }
   } catch (err) {
       console.error("Error reading PDF for QR Code:", err);

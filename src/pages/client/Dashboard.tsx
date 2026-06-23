@@ -18,7 +18,8 @@ import {
   RefreshCw,
   Check,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Eye
 } from "lucide-react";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Legend } from "recharts";
 import { format, parse, subMonths, isBefore, isAfter, isEqual, parseISO, differenceInDays } from "date-fns";
@@ -488,16 +489,29 @@ export function ClientDashboard() {
                         {/* Interactive tactile buttons */}
                         <div className="flex flex-wrap items-center gap-2 self-end sm:self-center">
                           {doc.fileUrl && (
+                            <>
                             <a 
                               href={doc.fileUrl} 
                               target="_blank" 
                               referrerPolicy="no-referrer"
                               rel="noreferrer" 
-                              className="h-10 px-3 flex items-center justify-center bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 text-xs font-bold rounded-xl text-slate-700 dark:text-slate-300 transition-colors"
+                              className="h-10 px-3 flex items-center justify-center bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 text-xs font-bold rounded-xl text-slate-700 dark:text-slate-300 transition-colors shrink-0"
                               title="Visualizar documento"
+                            >
+                              <Eye className="w-3.5 h-3.5 mr-1.5" /> Ver Arquivo
+                            </a>
+                            <a 
+                              href={doc.fileUrl} 
+                              target="_blank" 
+                              download
+                              referrerPolicy="no-referrer"
+                              rel="noreferrer" 
+                              className="h-10 w-10 flex items-center justify-center bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 text-xs font-bold rounded-xl text-slate-700 dark:text-slate-300 transition-colors shrink-0"
+                              title="Baixar Arquivo"
                             >
                               <Download className="w-3.5 h-3.5" />
                             </a>
+                            </>
                           )}
 
                           {doc.pixCode && (
