@@ -1,5 +1,6 @@
+import React, { useState, useEffect } from "react";
 import { Outlet, Navigate, Link, useLocation, useNavigate } from "react-router-dom";
-import { LayoutDashboard, Folder, Upload, LogOut, Settings, Users, Calculator } from "lucide-react";
+import { LayoutDashboard, Folder, Upload, LogOut, Settings, Users, Calculator, Menu, Pin, X } from "lucide-react";
 import { cn } from "../lib/utils";
 import { ThemeToggle } from "./ThemeToggle";
 
@@ -8,6 +9,25 @@ export function ClientLayout() {
   const user = JSON.parse(localStorage.getItem("clientUser") || sessionStorage.getItem("clientUser") || "{}");
   const location = useLocation();
   const navigate = useNavigate();
+
+  const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  
+  // Password Change Modal State
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [emailForm, setEmailForm] = useState(user.email || "");
+  const [passwordForm, setPasswordForm] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [modalError, setModalError] = useState("");
+  const [modalSuccess, setModalSuccess] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    // Keep email input in sync when user object charges
+    if (user.email && !emailForm) {
+      setEmailForm(user.email);
+    }
+  }, [user.email]);
 
   if (!token) {
     return <Navigate to="/login" replace />;
@@ -21,78 +41,225 @@ export function ClientLayout() {
     navigate("/login");
   };
 
+  const handlePasswordChangeSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setModalError("");
+    setModalSuccess("");
+
+    if (passwordForm && passwordForm !== confirmPassword) {
+      setModalError("As senhas informadas não coincidem.");
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      const res = await fetch("/api/client/setup-profile", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          email: emailForm,
+          password: passwordForm || undefined
+        })
+      });
+
+      const data = await res.json();
+      if (res.ok) {
+        setModalSuccess("Dados de acesso atualizados com sucesso!");
+        setPasswordForm("");
+        setConfirmPassword("");
+        // Save the updated email in the user details
+        const updatedUser = { ...user, email: emailForm, firstAccessDone: true };
+        if (localStorage.getItem("clientUser")) {
+          localStorage.setItem("clientUser", JSON.stringify(updatedUser));
+        } else {
+          sessionStorage.setItem("clientUser", JSON.stringify(updatedUser));
+        }
+      } else {
+        setModalError(data.error || "Ocorreu um erro ao atualizar os dados.");
+      }
+    } catch (e: any) {
+      setModalError("Erro de conexão com o servidor.");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const menu = [
     { name: "Painel Resumo", path: "/dashboard", icon: LayoutDashboard },
     { name: "Cofre Digital", path: "/vault", icon: Folder },
     { name: "Meus Envios", path: "/uploads", icon: Upload },
   ];
 
+  const renderSidebarContent = () => (
+    <div className="flex flex-col h-full bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800">
+      <div className="h-20 flex items-center justify-between px-6 border-b border-slate-100 dark:border-slate-800">
+        <div className="flex items-center space-x-3">
+           <div className="w-10 h-10 bg-virgula-card rounded-xl border border-white/10 flex items-center justify-center text-virgula-green shadow-[0_0_20px_rgba(16,185,129,0.25)] shrink-0">
+             <Calculator strokeWidth={2.5} className="w-[24px] h-[24px]" />
+           </div>
+           <div className="flex flex-col justify-center">
+              <span className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight leading-none mb-0.5">Vírgula</span>
+              <span className="text-xs font-semibold text-virgula-green tracking-widest leading-none uppercase">Contábil</span>
+           </div>
+        </div>
+        {/* Mobile close button */}
+        <button onClick={() => setMobileSidebarOpen(false)} className="md:hidden p-1.5 text-slate-400 hover:text-slate-600 rounded-lg">
+          <X className="w-5 h-5" />
+        </button>
+      </div>
+
+      <nav className="flex-1 px-4 py-4 space-y-1 overflow-y-auto">
+        {menu.map((item) => {
+          const Icon = item.icon;
+          const active = location.pathname === item.path;
+          return (
+            <Link
+              key={item.path}
+              to={item.path}
+              onClick={() => setMobileSidebarOpen(false)}
+              className={cn(
+                "flex items-center px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
+                active ? "bg-virgula-green/10 text-virgula-green dark:bg-virgula-green/20" : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700/50"
+              )}
+            >
+              <Icon className={cn("w-5 h-5 mr-3", active ? "text-virgula-green" : "text-slate-400")} />
+              {item.name}
+            </Link>
+          );
+        })}
+
+        {/* Password / Settings link */}
+        <button
+          onClick={() => {
+            setShowPasswordModal(true);
+            setMobileSidebarOpen(false);
+          }}
+          className="w-full flex items-center px-3 py-2.5 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700/50 rounded-lg text-sm font-medium transition-colors text-left"
+        >
+          <Settings className="w-5 h-5 mr-3 text-slate-400" />
+          Alterar Senha
+        </button>
+      </nav>
+
+      <div className="p-4 border-t border-slate-200 dark:border-slate-800">
+        <div className="flex items-center px-3 py-2">
+           <div className="w-8 h-8 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center text-slate-600 dark:text-slate-300 font-bold mr-3 shrink-0">
+             {user.name?.charAt(0) || "C"}
+           </div>
+           <div className="flex flex-col overflow-hidden">
+             <span className="text-sm font-medium text-slate-900 dark:text-white truncate">{user.name}</span>
+             <span className="text-xs text-slate-500 dark:text-slate-400 truncate">Cliente</span>
+           </div>
+        </div>
+        <button
+          onClick={handleLogout}
+          className="mt-2 w-full flex items-center px-3 py-2 text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-red-50 dark:hover:bg-red-900/30 hover:text-red-600 dark:hover:text-red-400 rounded-lg transition-colors"
+        >
+          <LogOut className="w-5 h-5 mr-3" />
+          Sair
+        </button>
+      </div>
+    </div>
+  );
+
   return (
     <div className="flex h-screen w-full bg-[#f8fafc] dark:bg-slate-900 text-slate-800 dark:text-slate-100 font-sans overflow-hidden transition-colors">
-      {/* Sidebar */}
-      <aside className="w-64 flex flex-col border-r border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-800/70 backdrop-blur-xl z-20">
-        <div className="h-20 flex items-center px-6">
-          <div className="flex items-center space-x-3">
-             <div className="w-12 h-12 bg-virgula-card rounded-xl border border-white/10 flex items-center justify-center text-virgula-green shadow-[0_0_20px_rgba(16,185,129,0.25)] shrink-0">
-               <Calculator strokeWidth={2.5} className="w-[30px] h-[30px]" />
-             </div>
-             <div className="flex flex-col justify-center">
-                <span className="text-3xl font-bold text-slate-900 dark:text-white tracking-tight leading-none mb-0.5">Vírgula</span>
-                <span className="text-base font-semibold text-virgula-green tracking-widest leading-none uppercase">Contábil</span>
-             </div>
-          </div>
-        </div>
-        <nav className="flex-1 px-4 py-4 space-y-1">
-          {menu.map((item) => {
-            const Icon = item.icon;
-            const active = location.pathname === item.path;
-            return (
-              <Link
-                key={item.path}
-                to={item.path}
-                className={cn(
-                  "flex items-center px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
-                  active ? "bg-virgula-green/10 text-virgula-green dark:bg-virgula-green/20" : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700/50"
-                )}
-              >
-                <Icon className={cn("w-5 h-5 mr-3", active ? "text-virgula-green" : "text-slate-400")} />
-                {item.name}
-              </Link>
-            );
-          })}
-        </nav>
-        <div className="p-4 border-t border-slate-200 dark:border-slate-700/50">
-          <div className="flex items-center px-3 py-2">
-             <div className="w-8 h-8 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center text-slate-600 dark:text-slate-300 font-bold mr-3 shrink-0">
-               {user.name?.charAt(0) || "C"}
-             </div>
-             <div className="flex flex-col overflow-hidden">
-               <span className="text-sm font-medium text-slate-900 dark:text-white truncate">{user.name}</span>
-               <span className="text-xs text-slate-500 dark:text-slate-400 truncate">Cliente</span>
-             </div>
-          </div>
-          <button
-            onClick={handleLogout}
-            className="mt-2 w-full flex items-center px-3 py-2 text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-red-50 dark:hover:bg-red-900/30 hover:text-red-600 dark:hover:text-red-400 rounded-lg transition-colors"
-          >
-            <LogOut className="w-5 h-5 mr-3" />
-            Sair
-          </button>
-        </div>
-      </aside>
+      
+      {/* 1. Desktop Sidebar */}
+      {desktopSidebarOpen && (
+        <aside className="hidden md:flex md:w-64 flex-col shrink-0 z-20 shadow-sm">
+          {renderSidebarContent()}
+        </aside>
+      )}
 
-      {/* Main Content */}
+      {/* 2. Mobile Sidebar Slide-out Drawer */}
+      {mobileSidebarOpen && (
+        <div className="fixed inset-0 z-50 md:hidden flex">
+          {/* Backdrop */}
+          <div onClick={() => setMobileSidebarOpen(false)} className="fixed inset-0 bg-slate-950/40 backdrop-blur-xs transition-opacity"></div>
+          {/* Menu Drawer */}
+          <div className="relative flex flex-col w-64 max-w-xs h-full bg-white dark:bg-slate-900 animate-in slide-in-from-left duration-300">
+            {renderSidebarContent()}
+          </div>
+        </div>
+      )}
+
+      {/* 3. Main Content Pane */}
       <main className="flex-1 flex flex-col relative overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-br from-virgula-green/5 via-transparent to-transparent -z-0"></div>
-        <div className="flex-1 overflow-auto z-10">
-          <div className="max-w-7xl mx-auto p-8 relative">
-            <div className="absolute top-8 right-8 z-50">
-               <ThemeToggle />
-            </div>
+        
+        {/* Top bar on all sizes to handle sidebar toggling beautifully */}
+        <header className="h-14 flex items-center justify-between px-4 bg-white/50 dark:bg-slate-800/50 backdrop-blur-md border-b border-slate-200/60 dark:border-slate-800/60 w-full z-10 shrink-0">
+          <div className="flex items-center space-x-3">
+             {/* Mobile hamburger menu */}
+             <button onClick={() => setMobileSidebarOpen(true)} className="md:hidden p-2 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors" aria-label="Menu principal">
+               <Menu className="w-5 h-5" />
+             </button>
+             {/* Desktop toggle sidebar button */}
+             <button onClick={() => setDesktopSidebarOpen(!desktopSidebarOpen)} className="hidden md:flex p-2 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors" title="Alternar visão lateral">
+               <Menu className="w-5 h-5" />
+             </button>
+             <span className="text-sm font-semibold text-slate-500 dark:text-slate-400 truncate max-w-[200px] sm:max-w-none">
+                Empresa: <strong className="text-slate-800 dark:text-white">{user.name}</strong>
+             </span>
+          </div>
+          <div className="flex items-center space-x-4">
+             <ThemeToggle />
+          </div>
+        </header>
+
+        <div className="absolute inset-0 top-14 bg-gradient-to-br from-virgula-green/5 via-transparent to-transparent -z-10 pointer-events-none"></div>
+        <div className="flex-1 overflow-auto z-0">
+          <div className="max-w-7xl mx-auto p-4 md:p-8 relative">
             <Outlet />
           </div>
         </div>
       </main>
+
+      {/* 4. Password Change Modal */}
+      {showPasswordModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-2xl border border-slate-100 dark:border-slate-700 p-6 w-full max-w-md relative">
+            <button onClick={() => setShowPasswordModal(false)} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300">
+               <X className="w-5 h-5" />
+            </button>
+            <h2 className="text-lg font-bold text-slate-900 dark:text-white mb-2">Alterar Senha de Acesso</h2>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mb-6">Mantenha seus dados e credenciais de acesso atualizados com segurança.</p>
+
+            {modalError && (
+              <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300 text-xs rounded-lg border border-red-100 dark:border-red-800">
+                {modalError}
+              </div>
+            )}
+            {modalSuccess && (
+              <div className="mb-4 p-3 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300 text-xs rounded-lg border border-emerald-100 dark:border-emerald-800">
+                {modalSuccess}
+              </div>
+            )}
+
+            <form onSubmit={handlePasswordChangeSubmit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">E-mail Cadastrado</label>
+                <input required type="email" value={emailForm} onChange={(e) => setEmailForm(e.target.value)} className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm bg-slate-50 dark:bg-slate-900 dark:text-white focus:bg-white focus:outline-none focus:ring-2 focus:ring-virgula-green" placeholder="exemplo@empresa.com" />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">Nova Senha (deixe em branco se não quiser alterar)</label>
+                <input type="password" value={passwordForm} onChange={(e) => setPasswordForm(e.target.value)} className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm bg-slate-50 dark:bg-slate-900 dark:text-white focus:bg-white focus:outline-none focus:ring-2 focus:ring-virgula-green" />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">Confirmar Nova Senha</label>
+                <input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm bg-slate-50 dark:bg-slate-900 dark:text-white focus:bg-white focus:outline-none focus:ring-2 focus:ring-virgula-green" />
+              </div>
+              <button disabled={isSaving} type="submit" className="w-full py-2.5 bg-slate-900 dark:bg-virgula-green text-white rounded-xl text-sm font-bold shadow-md hover:opacity-90 transition-opacity">
+                {isSaving ? "Salvando..." : "Confirmar Alterações"}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
@@ -101,6 +268,9 @@ export function AccountantLayout() {
   const token = localStorage.getItem("accountantToken");
   const location = useLocation();
   const navigate = useNavigate();
+
+  const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
   if (!token) {
     return <Navigate to="/admin/login" replace />;
@@ -116,60 +286,108 @@ export function AccountantLayout() {
     { name: "Clientes", path: "/admin/clients", icon: Users },
   ];
 
+  const renderSidebarContent = () => (
+    <div className="flex flex-col h-full bg-slate-900 dark:bg-slate-950 text-slate-100">
+      <div className="h-20 flex items-center justify-between px-6 border-b border-slate-800">
+        <div className="flex items-center space-x-3">
+           <div className="w-10 h-10 bg-virgula-card rounded-xl border border-white/10 flex items-center justify-center text-virgula-green shadow-[0_0_20px_rgba(16,185,129,0.25)] shrink-0">
+             <Calculator strokeWidth={2.5} className="w-[24px] h-[24px]" />
+           </div>
+           <div className="flex flex-col justify-center">
+              <span className="text-2xl font-bold text-white tracking-tight leading-none mb-0.5">Vírgula</span>
+              <span className="text-xs font-semibold text-virgula-green tracking-widest leading-none uppercase">Contábil</span>
+           </div>
+        </div>
+        {/* Mobile close button */}
+        <button onClick={() => setMobileSidebarOpen(false)} className="md:hidden p-1.5 text-slate-400 hover:text-slate-200 rounded-lg">
+          <X className="w-5 h-5" />
+        </button>
+      </div>
+
+      <nav className="flex-1 px-4 py-4 space-y-1 overflow-y-auto">
+        {menu.map((item) => {
+          const Icon = item.icon;
+          const active = location.pathname === item.path || (location.pathname.startsWith('/admin/client/') && item.path === '/admin/clients');
+          return (
+            <Link
+              key={item.path}
+              to={item.path}
+              onClick={() => setMobileSidebarOpen(false)}
+              className={cn(
+                "flex items-center px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
+                active ? "bg-slate-800 text-white shadow-inner" : "text-slate-400 hover:bg-slate-800/50 hover:text-white"
+              )}
+            >
+              <Icon className={cn("w-5 h-5 mr-3", active ? "text-virgula-green" : "text-slate-500")} />
+              {item.name}
+            </Link>
+          );
+        })}
+      </nav>
+
+      <div className="p-4 border-t border-slate-800">
+         <button
+          onClick={handleLogout}
+          className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
+        >
+          <span>Sair do sistema</span>
+          <LogOut className="w-4 h-4" />
+        </button>
+      </div>
+    </div>
+  );
+
   return (
     <div className="flex h-screen w-full bg-[#f8fafc] dark:bg-slate-900 text-slate-800 dark:text-slate-100 font-sans overflow-hidden transition-colors">
-      <aside className="w-64 bg-slate-900 dark:bg-slate-950 border-r border-slate-800 flex flex-col z-20 shadow-2xl">
-        <div className="h-20 flex items-center px-6">
-          <div className="flex items-center space-x-3">
-             <div className="w-12 h-12 bg-virgula-card rounded-xl border border-white/10 flex items-center justify-center text-virgula-green shadow-[0_0_20px_rgba(16,185,129,0.25)] shrink-0">
-               <Calculator strokeWidth={2.5} className="w-[30px] h-[30px]" />
-             </div>
-             <div className="flex flex-col justify-center">
-                <span className="text-3xl font-bold text-white tracking-tight leading-none mb-0.5">Vírgula</span>
-                <span className="text-base font-semibold text-virgula-green tracking-widest leading-none uppercase">Contábil</span>
-             </div>
+      
+      {/* 1. Desktop Sidebar */}
+      {desktopSidebarOpen && (
+        <aside className="hidden md:flex md:w-64 flex-col shrink-0 z-20 shadow-2xl">
+          {renderSidebarContent()}
+        </aside>
+      )}
+
+      {/* 2. Mobile Sidebar Slide-out Drawer */}
+      {mobileSidebarOpen && (
+        <div className="fixed inset-0 z-50 md:hidden flex">
+          {/* Backdrop */}
+          <div onClick={() => setMobileSidebarOpen(false)} className="fixed inset-0 bg-slate-950/40 backdrop-blur-xs transition-opacity"></div>
+          {/* Menu Drawer */}
+          <div className="relative flex flex-col w-64 max-w-xs h-full bg-slate-900 animate-in slide-in-from-left duration-300">
+            {renderSidebarContent()}
           </div>
         </div>
-        <nav className="flex-1 px-4 py-4 space-y-1">
-          {menu.map((item) => {
-            const Icon = item.icon;
-            const active = location.pathname === item.path || (location.pathname.startsWith('/admin/client/') && item.path === '/admin/clients');
-            return (
-              <Link
-                key={item.path}
-                to={item.path}
-                className={cn(
-                  "flex items-center px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
-                  active ? "bg-slate-800 text-white shadow-inner" : "text-slate-400 hover:bg-slate-800/50 hover:text-white"
-                )}
-              >
-                <Icon className={cn("w-5 h-5 mr-3", active ? "text-virgula-green" : "text-slate-500")} />
-                {item.name}
-              </Link>
-            );
-          })}
-        </nav>
-        <div className="p-4 border-t border-slate-800">
-           <button
-            onClick={handleLogout}
-            className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
-          >
-            <span>Sair do sistema</span>
-            <LogOut className="w-4 h-4" />
-          </button>
-        </div>
-      </aside>
+      )}
+
+      {/* 3. Main Content Pane */}
       <main className="flex-1 flex flex-col relative overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-br from-virgula-green/5 via-transparent to-transparent -z-0"></div>
-        <div className="flex-1 overflow-auto z-10">
-          <div className="max-w-7xl mx-auto p-8 relative">
-            <div className="absolute top-8 right-8 z-50">
-               <ThemeToggle />
-            </div>
+        
+        {/* Top bar */}
+        <header className="h-14 flex items-center justify-between px-4 bg-white/50 dark:bg-slate-800/50 backdrop-blur-md border-b border-slate-200/60 dark:border-slate-800/60 w-full z-10 shrink-0">
+          <div className="flex items-center space-x-3">
+             <button onClick={() => setMobileSidebarOpen(true)} className="md:hidden p-2 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors" aria-label="Menu">
+               <Menu className="w-5 h-5" />
+             </button>
+             <button onClick={() => setDesktopSidebarOpen(!desktopSidebarOpen)} className="hidden md:flex p-2 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors" title="Alternar visão lateral">
+               <Menu className="w-5 h-5" />
+             </button>
+             <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                Contador: <strong className="text-slate-800 dark:text-white">Admin Vírgula</strong>
+             </span>
+          </div>
+          <div className="flex items-center space-x-4">
+             <ThemeToggle />
+          </div>
+        </header>
+
+        <div className="absolute inset-0 top-14 bg-gradient-to-br from-virgula-green/5 via-transparent to-transparent -z-10 pointer-events-none"></div>
+        <div className="flex-1 overflow-auto z-0">
+          <div className="max-w-7xl mx-auto p-4 md:p-8 relative">
             <Outlet />
           </div>
         </div>
       </main>
+
     </div>
   );
 }

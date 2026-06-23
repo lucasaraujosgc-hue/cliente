@@ -382,7 +382,7 @@ export function setupRoutes(app: Express) {
       const [newClient] = await db.insert(clients).values({
         cnpj,
         name,
-        passwordHash: cnpj.replace(/\D/g, "").slice(0, 6),
+        passwordHash: cnpj,
         regularityStatus: regularityStatus || "green",
         integrationHash: integrationHash || null,
         accountantCategory: accountantCategory || null
@@ -544,6 +544,79 @@ export function setupRoutes(app: Express) {
     } catch (e: any) {
       console.error("Webhook Erro:", e);
       return res.status(500).json({ error: "Erro interno no servidor webhook: " + e.message });
+    }
+  });
+
+  // Accountant update billing for client
+  app.post("/api/accountant/client/:id/update-billing", verifyAccountantAuth, async (req, res) => {
+    const clientId = req.params.id;
+    const { month, servicesRevenue, salesRevenue, totalIncomes, servicesTaken } = req.body;
+    
+    try {
+      const existing = await db.select().from(billingData).where(eq(billingData.clientId, clientId));
+      const target = existing.find(b => b.month === month);
+      
+      const updatePayload = {
+        servicesRevenue: servicesRevenue || 0,
+        salesRevenue: salesRevenue || 0,
+        totalIncomes: totalIncomes || 0,
+        servicesTaken: servicesTaken || 0,
+        // Legacy fallback
+        revenue: (servicesRevenue || 0) + (salesRevenue || 0),
+        expenses: servicesTaken || 0,
+        payroll: 0
+      };
+
+      if (target) {
+        await db.update(billingData).set(updatePayload).where(eq(billingData.id, target.id));
+      } else {
+        await db.insert(billingData).values({
+          ...updatePayload,
+          clientId,
+          month
+        });
+      }
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // Accountant bulk billing upload for client
+  app.post("/api/accountant/client/:id/bulk-billing", verifyAccountantAuth, async (req, res) => {
+    const clientId = req.params.id;
+    const { data } = req.body; // Array of items
+    
+    try {
+      for (const item of data) {
+        const { month, servicesRevenue, salesRevenue, totalIncomes, servicesTaken } = item;
+        const existing = await db.select().from(billingData).where(eq(billingData.clientId, clientId));
+        const target = existing.find(b => b.month === month);
+        
+        const updatePayload = {
+          servicesRevenue: servicesRevenue || 0,
+          salesRevenue: salesRevenue || 0,
+          totalIncomes: totalIncomes || 0,
+          servicesTaken: servicesTaken || 0,
+          // Legacy fallback
+          revenue: (servicesRevenue || 0) + (salesRevenue || 0),
+          expenses: servicesTaken || 0,
+          payroll: 0
+        };
+
+        if (target) {
+          await db.update(billingData).set(updatePayload).where(eq(billingData.id, target.id));
+        } else {
+          await db.insert(billingData).values({
+            ...updatePayload,
+            clientId,
+            month
+          });
+        }
+      }
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
     }
   });
 

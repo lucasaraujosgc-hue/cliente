@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from "react";
 import { AlertCircle, CheckCircle, Copy, Bell, Upload, FileCheck, FileSpreadsheet, Edit3 } from "lucide-react";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Legend } from "recharts";
-import { format, parse, subMonths, isBefore, isAfter, isEqual } from "date-fns";
+import { format, parse, subMonths, isBefore, isAfter, isEqual, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import * as XLSX from "xlsx";
 
@@ -184,33 +184,33 @@ export function ClientDashboard() {
             
             <div className="flex flex-wrap gap-3 mb-6">
                {hasBankStatement ? (
-                 <div className="flex-1 min-w-[200px] flex justify-center items-center text-virgula-green font-bold bg-virgula-green/10 p-3 rounded-xl border border-virgula-green/20 text-sm">
-                   <FileCheck className="w-5 h-5 mr-2" /> Extrato anexado
-                 </div>
-               ) : (
-                 <div className="flex-1 min-w-[200px]">
-                   <input type="file" ref={fileInputRef} className="hidden" accept=".pdf,.ofx" onChange={handleUploadBankStatement}/>
-                   <button disabled={isUploading} onClick={() => fileInputRef.current?.click()} className="w-full px-4 py-3 bg-slate-900 dark:bg-slate-700 text-white text-sm font-bold rounded-xl shadow-md hover:bg-slate-800 transition-colors flex items-center justify-center disabled:opacity-50">
-                     <Upload className="w-4 h-4 mr-2" /> {isUploading ? "Enviando..." : "Extrato Bancário"}
+                  <div className="flex-1 min-w-[200px] flex justify-center items-center text-virgula-green font-bold bg-virgula-green/10 p-3 rounded-xl border border-virgula-green/20 text-sm">
+                    <FileCheck className="w-5 h-5 mr-2" /> Extrato anexado
+                  </div>
+                ) : (
+                  <div className="flex-1 min-w-[200px]">
+                    <input type="file" ref={fileInputRef} className="hidden" accept=".pdf,.ofx" onChange={handleUploadBankStatement}/>
+                    <button disabled={isUploading} onClick={() => fileInputRef.current?.click()} className="w-full px-4 py-3 bg-slate-900 dark:bg-slate-700 text-white text-sm font-bold rounded-xl shadow-md hover:bg-slate-800 transition-colors flex items-center justify-center disabled:opacity-50">
+                      <Upload className="w-4 h-4 mr-2" /> {isUploading ? "Enviando..." : "Extrato Bancário"}
+                    </button>
+                  </div>
+                )}
+                
+                <div className="flex-1 min-w-[200px]">
+                   <input type="file" ref={excelFileRef} className="hidden" accept=".xlsx,.xls,.csv" onChange={handleExcelImport} />
+                   <button onClick={() => excelFileRef.current?.click()} className="w-full px-4 py-3 bg-emerald-600 text-white text-sm font-bold rounded-xl shadow-md hover:bg-emerald-700 transition-colors flex items-center justify-center">
+                     <FileSpreadsheet className="w-4 h-4 mr-2" /> Importar Excel (.xlsx)
                    </button>
-                 </div>
-               )}
-               
-               <div className="flex-1 min-w-[200px]">
-                  <input type="file" ref={excelFileRef} className="hidden" accept=".xlsx,.xls,.csv" onChange={handleExcelImport} />
-                  <button onClick={() => excelFileRef.current?.click()} className="w-full px-4 py-3 bg-emerald-600 text-white text-sm font-bold rounded-xl shadow-md hover:bg-emerald-700 transition-colors flex items-center justify-center">
-                    <FileSpreadsheet className="w-4 h-4 mr-2" /> Importar Excel (.xlsx)
-                  </button>
-               </div>
-               
-               <div className="flex-1 min-w-[200px]">
-                  <button onClick={() => setShowBillingForm(!showBillingForm)} className="w-full px-4 py-3 border-2 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-sm font-bold rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors flex items-center justify-center">
-                    <Edit3 className="w-4 h-4 mr-2" /> Preencher Manual
-                  </button>
-               </div>
-            </div>
+                </div>
+                
+                <div className="flex-1 min-w-[200px]">
+                   <button onClick={() => setShowBillingForm(!showBillingForm)} className="w-full px-4 py-3 border-2 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-sm font-bold rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors flex items-center justify-center">
+                     <Edit3 className="w-4 h-4 mr-2" /> Preencher Manual
+                   </button>
+                </div>
+             </div>
 
-            {showBillingForm && (
+             {showBillingForm && (
               <form onSubmit={saveBillingData} className="bg-slate-50 dark:bg-slate-900/30 p-4 rounded-2xl border border-slate-100 dark:border-slate-800 mt-2 space-y-4 animate-in slide-in-from-top-2">
                  <div className="grid grid-cols-2 gap-4">
                     <div>
@@ -274,24 +274,35 @@ export function ClientDashboard() {
           ))}
         </div>
 
-        <div className="bg-white/80 dark:bg-slate-800/80 backdrop-blur-xl rounded-3xl border border-white dark:border-slate-700 p-6 flex flex-col justify-center items-center shadow-xl shadow-slate-200/50 dark:shadow-slate-900/50">
-           <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4">Regularidade Fiscal</h3>
+        <div className="bg-white/80 dark:bg-slate-800/80 backdrop-blur-xl rounded-3xl border border-white dark:border-slate-700 p-6 flex flex-col justify-start items-stretch shadow-xl shadow-slate-200/50 dark:shadow-slate-900/50">
+           <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4">Situação Fiscal da Empresa</h3>
            {data.client.regularityStatus === "green" ? (
               <div className="text-center">
                 <CheckCircle className="w-16 h-16 text-emerald-400 drop-shadow-[0_0_8px_rgba(52,211,153,0.6)] mx-auto mb-3" />
-                <span className="text-slate-800 dark:text-white font-bold">Tudo em dia</span>
-              </div>
-           ) : data.client.regularityStatus === "warning" ? (
-             <div className="text-center">
-                <AlertCircle className="w-16 h-16 text-amber-400 drop-shadow-[0_0_8px_rgba(251,191,36,0.6)] mx-auto mb-3" />
-                <span className="text-slate-800 dark:text-white font-bold">Atenção</span>
+                <span className="text-slate-800 dark:text-white font-bold">Situação perante à Receita: Regular 🟢</span>
               </div>
            ) : (
-             <div className="text-center">
-                <AlertCircle className="w-16 h-16 text-red-400 drop-shadow-[0_0_8px_rgba(248,113,113,0.6)] mx-auto mb-3" />
-                <span className="text-slate-800 dark:text-white font-bold">Irregular</span>
+              <div className="space-y-3 w-full">
+                 <div className="text-center py-2 border-b border-slate-100 dark:border-slate-700">
+                    <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-2 animate-pulse" />
+                    <span className="text-sm font-bold text-red-600 dark:text-red-400 block mt-2">Atenção: Pendências detectadas 🔴</span>
+                 </div>
+                 <div className="text-xs text-slate-600 dark:text-slate-400 space-y-2 mt-2 text-left">
+                    <p className="font-semibold text-slate-700 dark:text-slate-350">Detalhamento das pendências:</p>
+                    {pendingDocs.length > 0 ? (
+                       <ul className="list-disc pl-4 space-y-1 text-slate-600 dark:text-slate-300">
+                          {pendingDocs.map((doc: any) => (
+                             <li key={doc.id}>
+                                {doc.title} {doc.dueDate && `(Vence em: ${doc.dueDate})`}
+                             </li>
+                          ))}
+                       </ul>
+                    ) : (
+                       <p className="italic text-slate-500">Existem pendências burocráticas sob análise da Receita Federal. Contate o suporte do contador no mural ao lado para mais detalhes.</p>
+                    )}
+                 </div>
               </div>
-           )}
+            )}
         </div>
       </div>
 
