@@ -408,6 +408,23 @@ export function setupRoutes(app: Express) {
     }
   });
 
+  app.delete("/api/accountant/client/:id", verifyAccountantAuth, async (req, res) => {
+    try {
+      const clientId = req.params.id;
+      // Delete dependencies
+      await db.delete(documents).where(eq(documents.clientId, clientId));
+      await db.delete(billingData).where(eq(billingData.clientId, clientId));
+      await db.delete(messages).where(eq(messages.clientId, clientId));
+      
+      // Delete client
+      await db.delete(clients).where(eq(clients.id, clientId));
+      res.json({ success: true });
+    } catch (e: any) {
+      console.error(e);
+      res.status(400).json({ error: e.message });
+    }
+  });
+
   app.get("/api/accountant/client/:id", verifyAccountantAuth, async (req, res) => {
     const clientId = req.params.id;
     const clientList = await db.select().from(clients).where(eq(clients.id, clientId));
@@ -463,6 +480,23 @@ export function setupRoutes(app: Express) {
       read: false
     });
     
+    res.json({ success: true });
+  });
+
+  app.post("/api/accountant/message/bulk", verifyAccountantAuth, async (req, res) => {
+    const { clientIds, content } = req.body;
+    
+    if (!Array.isArray(clientIds) || clientIds.length === 0) {
+      return res.status(400).json({ error: "Nenhum cliente selecionado" });
+    }
+
+    const newMessages = clientIds.map((id: string) => ({
+      clientId: id,
+      content,
+      read: false
+    }));
+
+    await db.insert(messages).values(newMessages);
     res.json({ success: true });
   });
   
