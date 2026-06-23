@@ -96,17 +96,18 @@ export function ClientDashboard() {
     const token = localStorage.getItem("clientToken") || sessionStorage.getItem("clientToken");
     
     try {
+      const formData = new FormData();
+      formData.append("title", `Extrato Bancário (${selectedCompetence})`);
+      formData.append("category", "bank_statement");
+      formData.append("competence", selectedCompetence);
+      formData.append("file", file);
+
       await fetch("/api/client/upload", {
         method: "POST",
         headers: {
-          "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({
-          title: `Extrato Bancário (${selectedCompetence})`,
-          category: "bank_statement",
-          competence: selectedCompetence,
-        }),
+        body: formData,
       });
       loadData();
     } catch (e) {

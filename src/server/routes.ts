@@ -7,8 +7,24 @@ import multer from "multer";
 import { db } from "./db";
 import { clients, documents, billingData, messages } from "./schema";
 import { eq, desc, asc } from "drizzle-orm";
+import fs from "fs";
+import path from "path";
 
-const upload = multer({ limits: { fileSize: 10 * 1024 * 1024 } }); // 10 MB limit
+const UPLOADS_DIR = path.join(process.cwd(), "uploads");
+if (!fs.existsSync(UPLOADS_DIR)) {
+  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+}
+
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, UPLOADS_DIR)
+  },
+  filename: function (req, file, cb) {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9)
+    cb(null, uniqueSuffix + '-' + file.originalname)
+  }
+})
+const upload = multer({ storage: storage, limits: { fileSize: 10 * 1024 * 1024 } }); // 10 MB limit
 const JWT_SECRET = crypto.randomBytes(32).toString("hex");
 
 // Email Transporter
@@ -69,15 +85,6 @@ function verifyAccountantAuth(req: Request, res: Response, next: NextFunction) {
   }
 }
 
-import fs from "fs";
-import path from "path";
-
-// Define uploads directory
-const UPLOADS_DIR = path.join(process.cwd(), "uploads");
-if (!fs.existsSync(UPLOADS_DIR)) {
-  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
-}
-
 export function setupRoutes(app: Express) {
   // Webhook for receiving files from external systems
   app.post("/api/webhook/receitas", async (req, res) => {
@@ -91,8 +98,11 @@ export function setupRoutes(app: Express) {
         dados_extraidos
       } = req.body;
 
-      if (!hash_empresa || !arquivo_base64) {
-        return res.status(400).json({ error: "hash_empresa and arquivo_base64 are required" });
+      if (!hash_empresa) {
+        return res.status(400).json({ error: "hash_empresa is required" });
+      }
+      if (!arquivo_base64 && categoria !== 'SITFIS_RECEITA') {
+        return res.status(400).json({ error: "arquivo_base64 is required for this category" });
       }
 
       // Find client
@@ -103,10 +113,13 @@ export function setupRoutes(app: Express) {
       const client = clientList[0];
 
       // Save file
-      const buffer = Buffer.from(arquivo_base64, 'base64');
-      const safeFilename = `${Date.now()}_${nome_arquivo}`;
-      const filePath = path.join(UPLOADS_DIR, safeFilename);
-      fs.writeFileSync(filePath, buffer);
+      let safeFilename = "";
+      if (arquivo_base64) {
+        const buffer = Buffer.from(arquivo_base64, 'base64');
+        safeFilename = `${Date.now()}_${nome_arquivo || 'documento'}`;
+        const filePath = path.join(UPLOADS_DIR, safeFilename);
+        fs.writeFileSync(filePath, buffer);
+      }
 
       // Create document record
       let competence = "";
@@ -123,6 +136,11 @@ export function setupRoutes(app: Express) {
       let titleStr = categoria === 'SITFIS_RECEITA' ? `SitFis Extração` : `Webhook ${categoria}`;
       if (dados_extraidos && Array.isArray(dados_extraidos) && dados_extraidos.length > 0) {
          titleStr += ` - ${dados_extraidos[0].orgao}: ${dados_extraidos[0].status}`;
+         
+         const hasPending = dados_extraidos.some(d => String(d.status).toUpperCase() === "PENDENTE");
+         if (hasPending) {
+           await db.update(clients).set({ regularityStatus: "red" }).where(eq(clients.id, client.id));
+         }
       }
       
       const newDoc = await db.insert(documents).values({
@@ -131,7 +149,7 @@ export function setupRoutes(app: Express) {
         category: categoria || "webhook_doc",
         competence: competence || "00/0000",
         dueDate: vencimento || null,
-        fileUrl: `/uploads/${safeFilename}`,
+        fileUrl: safeFilename ? `/uploads/${safeFilename}` : null,
         status: "new",
         uploadedBy: "accountant" // As it comes from integration system
       }).returning();
@@ -410,7 +428,7 @@ export function setupRoutes(app: Express) {
   });
 
   // Upload file by client
-  app.post("/api/client/upload", verifyClientAuth, async (req, res) => {
+  app.post("/api/client/upload", verifyClientAuth, upload.single("file"), async (req, res) => {
     const clientId = (req as any).user.clientId;
     const { title, category, competence } = req.body;
     
@@ -419,6 +437,7 @@ export function setupRoutes(app: Express) {
       title: title || `Documento ${category}`,
       category,
       competence,
+      fileUrl: req.file ? `/uploads/${req.file.filename}` : null,
       status: "new",
       uploadedBy: "client",
     }).returning();
@@ -528,7 +547,7 @@ export function setupRoutes(app: Express) {
     res.json({ docs: inboxDocs });
   });
 
-  app.post("/api/accountant/upload-doc", verifyAccountantAuth, async (req, res) => {
+  app.post("/api/accountant/upload-doc", verifyAccountantAuth, upload.single("file"), async (req, res) => {
     const { clientId, title, category, dueDate, competence } = req.body;
     
     const [newDoc] = await db.insert(documents).values({
@@ -537,6 +556,7 @@ export function setupRoutes(app: Express) {
       category,
       dueDate,
       competence,
+      fileUrl: req.file ? `/uploads/${req.file.filename}` : null,
       status: "new",
       uploadedBy: "accountant"
     }).returning();

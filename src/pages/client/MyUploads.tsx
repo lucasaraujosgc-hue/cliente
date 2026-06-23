@@ -20,15 +20,14 @@ export function ClientUploads() {
   const handleUpload = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
-    const title = formData.get("title") as string;
+    formData.append("category", "upload");
     
     await fetch("/api/client/upload", {
       method: "POST",
       headers: { 
         Authorization: `Bearer ${localStorage.getItem("clientToken") || sessionStorage.getItem("clientToken")}`,
-        "Content-Type": "application/json"
       },
-      body: JSON.stringify({ title, category: "upload" })
+      body: formData
     });
     
     (e.target as HTMLFormElement).reset();
@@ -56,7 +55,7 @@ export function ClientUploads() {
             </div>
             <div className="w-full sm:flex-1">
               <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-1">Anexo Documento (Imagens ou PDF)</label>
-              <input type="file" required className="w-full text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-slate-100 dark:file:bg-slate-700 file:text-slate-700 dark:file:text-slate-350 hover:file:bg-slate-200 transition-colors" />
+              <input type="file" name="file" required className="w-full text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-slate-100 dark:file:bg-slate-700 file:text-slate-700 dark:file:text-slate-350 hover:file:bg-slate-200 transition-colors" />
             </div>
             <button type="submit" className="w-full sm:w-auto h-10 bg-slate-900 hover:bg-slate-800 dark:bg-emerald-500 dark:hover:bg-emerald-600 text-white px-6 rounded-xl text-xs font-bold transition-all shrink-0 shadow-sm hover:shadow">
               Enviar para Análise

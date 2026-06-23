@@ -109,19 +109,13 @@ export function ClientDetail() {
   const handleUpload = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
+    formData.append("clientId", id as string);
     await fetch("/api/accountant/upload-doc", {
       method: "POST",
       headers: { 
         Authorization: `Bearer ${localStorage.getItem("accountantToken")}`,
-        "Content-Type": "application/json"
       },
-      body: JSON.stringify({ 
-        clientId: id, 
-        title: formData.get("title"),
-        category: formData.get("category"),
-        competence: formData.get("competence"),
-        dueDate: formData.get("dueDate"),
-      })
+      body: formData
     });
     (e.target as HTMLFormElement).reset();
     loadData();
@@ -230,7 +224,7 @@ export function ClientDetail() {
               </div>
               <div>
                 <label className="block text-xs font-semibold text-slate-500 mb-1">Arquivo Fiscal/PDF</label>
-                <input type="file" required className="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200" />
+                <input type="file" name="file" required className="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200" />
               </div>
               <div className="pt-2">
                  <button type="submit" className="w-full bg-slate-900 text-white py-2.5 rounded-lg text-sm font-bold hover:bg-slate-800 transition-colors shadow-md">
