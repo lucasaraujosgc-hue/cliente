@@ -27,7 +27,7 @@ webpush.setVapidDetails(
   vapidKeys.publicKey,
   vapidKeys.privateKey
 );
-import { eq, desc, asc } from "drizzle-orm";
+import { eq, desc, asc, inArray } from "drizzle-orm";
 import fs from "fs";
 import path from "path";
 
@@ -827,11 +827,11 @@ export function setupRoutes(app: Express) {
 
   app.post("/api/admin/notifications/send", verifyAccountantAuth, async (req, res) => {
     try {
-      const { userId, title, body } = req.body;
+      const { userIds, title, body } = req.body;
       
       let subs = [];
-      if (userId) {
-        subs = await db.select().from(subscriptions).where(eq(subscriptions.clientId, userId));
+      if (userIds && userIds.length > 0) {
+        subs = await db.select().from(subscriptions).where(inArray(subscriptions.clientId, userIds));
       } else {
         subs = await db.select().from(subscriptions);
       }
