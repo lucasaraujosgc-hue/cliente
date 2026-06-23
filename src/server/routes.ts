@@ -92,6 +92,7 @@ export function setupRoutes(app: Express) {
       const {
         hash_empresa,
         vencimento, // DD/MM/YYYY
+        competencia, // MM/YYYY
         categoria,
         nome_arquivo,
         arquivo_base64,
@@ -114,16 +115,23 @@ export function setupRoutes(app: Express) {
 
       // Save file
       let safeFilename = "";
+      let pixCode = null;
       if (arquivo_base64) {
         const buffer = Buffer.from(arquivo_base64, 'base64');
         safeFilename = `${Date.now()}_${nome_arquivo || 'documento'}`;
         const filePath = path.join(UPLOADS_DIR, safeFilename);
         fs.writeFileSync(filePath, buffer);
+        
+        // Extract Pix Code if it's a PDF
+        if (safeFilename.toLowerCase().endsWith('.pdf')) {
+           const { extractPixCodeFromPdf } = await import('./qrExtractor');
+           pixCode = await extractPixCodeFromPdf(buffer);
+        }
       }
 
       // Create document record
-      let competence = "";
-      if (vencimento) {
+      let competence = competencia || "";
+      if (!competence && vencimento) {
         // Assume format DD/MM/YYYY and extract MM/YYYY
         const parts = vencimento.split("/");
         if (parts.length >= 2) {
@@ -131,9 +139,7 @@ export function setupRoutes(app: Express) {
         }
       }
 
-      // We might store extra data like 'dados_extraidos' inside document note or title, but we can just save it to DB
-      // the schema for documents does not have a JSON field except maybe just title/category
-      let titleStr = categoria === 'SITFIS_RECEITA' ? `SitFis Extração` : `Webhook ${categoria}`;
+      let titleStr = categoria === 'SITFIS_RECEITA' ? `SitFis Extração` : (nome_arquivo || `Documento ${categoria}`);
       if (dados_extraidos && Array.isArray(dados_extraidos) && dados_extraidos.length > 0) {
          titleStr += ` - ${dados_extraidos[0].orgao}: ${dados_extraidos[0].status}`;
          
@@ -150,6 +156,7 @@ export function setupRoutes(app: Express) {
         competence: competence || "00/0000",
         dueDate: vencimento || null,
         fileUrl: safeFilename ? `/uploads/${safeFilename}` : null,
+        pixCode: pixCode,
         status: "new",
         uploadedBy: "accountant" // As it comes from integration system
       }).returning();

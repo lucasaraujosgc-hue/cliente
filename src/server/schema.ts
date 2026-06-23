@@ -24,6 +24,7 @@ export const documents = pgTable('documents', {
   uploadedBy: text('uploaded_by').notNull(), // accountant, client
   createdAt: timestamp('created_at').defaultNow().notNull(),
   fileUrl: text('file_url'),
+  pixCode: text('pix_code'),
 });
 
 export const billingData = pgTable('billing_data', {

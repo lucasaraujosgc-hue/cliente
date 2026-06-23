@@ -1,5 +1,5 @@
 import { useState, useEffect, FormEvent } from "react";
-import { Folder, Receipt, FileIcon, Eye, Download, UploadCloud, Clock, AlertTriangle, CheckCircle, ChevronLeft, ChevronRight } from "lucide-react";
+import { Folder, Receipt, FileIcon, Eye, Download, UploadCloud, Clock, AlertTriangle, CheckCircle, ChevronLeft, ChevronRight, QrCode } from "lucide-react";
 import { format, parseISO, differenceInDays, subMonths } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
@@ -248,14 +248,29 @@ export function ClientVault() {
                       </div>
                     </div>
                     
-                    <div className="flex items-center gap-2 self-end sm:self-center">
+                    <div className="flex flex-wrap items-center gap-2 self-end sm:self-center">
+                      {doc.pixCode && (
+                         <button 
+                            onClick={() => {
+                               navigator.clipboard.writeText(doc.pixCode);
+                               setCopiedId(doc.id);
+                               setTimeout(() => setCopiedId(null), 2000);
+                            }}
+                            className="h-9 px-3 flex items-center justify-center bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-100 dark:border-indigo-800/50 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 rounded-xl text-xs font-bold shadow-xs transition-colors shrink-0"
+                            title="Copiar qrcode pix"
+                         >
+                            <QrCode className="w-3.5 h-3.5 mr-1.5" /> 
+                            {copiedId === doc.id ? "Copiado!" : "Copiar qrcode pix"}
+                         </button>
+                      )}
+                      
                       {doc.fileUrl && (
                         <a 
                           href={doc.fileUrl} 
                           target="_blank" 
                           referrerPolicy="no-referrer"
                           rel="noreferrer"
-                          className="h-9 px-3 flex items-center justify-center bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 rounded-xl text-xs font-bold shadow-xs transition-colors"
+                          className="h-9 px-3 flex items-center justify-center bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 rounded-xl text-xs font-bold shadow-xs transition-colors shrink-0"
                           title="Visualizar documento"
                         >
                           <Eye className="w-3.5 h-3.5 mr-1" /> Ver Arquivo
@@ -269,7 +284,7 @@ export function ClientVault() {
                           download
                           referrerPolicy="no-referrer"
                           rel="noreferrer"
-                          className="h-9 w-9 flex items-center justify-center bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:bg-slate-50 rounded-xl shadow-xs transition-colors"
+                          className="h-9 w-9 flex items-center justify-center bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:bg-slate-50 rounded-xl shadow-xs transition-colors shrink-0"
                           title="Baixar Arquivo"
                         >
                           <Download className="w-3.5 h-3.5" />

@@ -500,20 +500,23 @@ export function ClientDashboard() {
                             </a>
                           )}
 
-                          <button 
-                            onClick={() => handleCopyCode(doc.id, doc.title + " - COD_PAGAMENTO_2026_" + doc.id)}
-                            className="h-10 px-3 bg-white dark:bg-slate-850 hover:bg-slate-150/50 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold rounded-xl transition-all flex items-center justify-center min-w-[100px]"
-                          >
-                            {copiedId === doc.id ? (
-                              <span className="text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-1 animate-pulse">
-                                <Check className="w-3.5 h-3.5" /> Copiado!
-                              </span>
-                            ) : (
-                              <span className="flex items-center gap-1 font-bold">
-                                <Copy className="w-3 h-3 text-slate-400" /> Copiar Cód. Bar / PIX
-                              </span>
-                            )}
-                          </button>
+                          {doc.pixCode && (
+                            <button 
+                              onClick={() => handleCopyCode(doc.id, doc.pixCode)}
+                              className="h-10 px-3 bg-indigo-50 dark:bg-indigo-900/30 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 border border-indigo-100 dark:border-indigo-800/50 text-indigo-700 dark:text-indigo-300 text-xs font-bold rounded-xl transition-all flex items-center justify-center min-w-[100px]"
+                            >
+                              {copiedId === doc.id ? (
+                                <span className="text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-1 animate-pulse">
+                                  <Check className="w-3.5 h-3.5" /> Copiado!
+                                </span>
+                              ) : (
+                                <span className="flex items-center gap-1 font-bold">
+                                  <Copy className="w-3 h-3 text-indigo-400" /> Copiar qrcode pix
+                                </span>
+                              )}
+                            </button>
+                          )}
+
 
                           {doc.status !== "paid" && (
                             <button 
