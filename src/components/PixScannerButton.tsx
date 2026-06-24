@@ -22,32 +22,64 @@ export function PixScannerButton({ docId, fileUrl }: PixScannerButtonProps) {
     
     const preScan = async () => {
       try {
-        const loadingTask = pdfjsLib.getDocument(fileUrl);
+        const loadingTask = pdfjsLib.getDocument({ url: fileUrl });
         const pdf = await loadingTask.promise;
         let foundCode = null;
 
+        // 1. Try to find the PIX code in the PDF text (Copia e Cola)
         for (let i = 1; i <= Math.min(pdf.numPages, 3); i++) {
           if (!mounted) break;
           const page = await pdf.getPage(i);
-          const viewport = page.getViewport({ scale: 1.5 });
-          const canvas = document.createElement("canvas");
-          const context = canvas.getContext("2d", { willReadFrequently: true });
-          if (!context) continue;
-          
-          canvas.height = viewport.height;
-          canvas.width = viewport.width;
-          
-          await page.render({
-            canvasContext: context,
-            viewport: viewport
-          }).promise;
-          
-          const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
-          const code = jsQR(imageData.data, imageData.width, imageData.height);
-          
-          if (code && code.data.startsWith("000201") && code.data.includes("BR.GOV.BCB.PIX")) {
-            foundCode = code.data;
+          const textContent = await page.getTextContent();
+          const textItems = textContent.items.map((item: any) => item.str);
+          const fullText = textItems.join("");
+          // Regex to match PIX code: starts with 000201, contains PIX domain, ends with 6304 + 4 hex chars
+          const pixRegex = /000201.*?(?:BR\.GOV\.BCB\.PIX|br\.gov\.bcb\.pix).*?6304[A-Fa-f0-9]{4}/i;
+          const match = fullText.match(pixRegex);
+          if (match) {
+            foundCode = match[0];
             break;
+          }
+          // Also check by joining with spaces or removing spaces just in case
+          const textNoSpaces = textItems.join("").replace(/\s+/g, "");
+          const matchNoSpaces = textNoSpaces.match(pixRegex);
+          if (matchNoSpaces) {
+            foundCode = matchNoSpaces[0];
+            break;
+          }
+        }
+
+        // 2. Fallback to image scanning if not found in text
+        if (!foundCode) {
+          for (let i = 1; i <= Math.min(pdf.numPages, 3); i++) {
+            if (!mounted) break;
+            const page = await pdf.getPage(i);
+            
+            const scales = [2.0, 3.0, 1.5]; // Try multiple scales for better detection
+            for (const scale of scales) {
+              const viewport = page.getViewport({ scale });
+              const canvas = document.createElement("canvas");
+              const context = canvas.getContext("2d", { willReadFrequently: true });
+              if (!context) continue;
+              
+              canvas.height = viewport.height;
+              canvas.width = viewport.width;
+              
+              // @ts-ignore
+              await page.render({
+                canvasContext: context,
+                viewport: viewport
+              }).promise;
+              
+              const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+              const code = jsQR(imageData.data, imageData.width, imageData.height);
+              
+              if (code && code.data.startsWith("000201") && (code.data.includes("BR.GOV.BCB.PIX") || code.data.toLowerCase().includes("br.gov.bcb.pix"))) {
+                foundCode = code.data;
+                break; // Found it
+              }
+            }
+            if (foundCode) break;
           }
         }
 

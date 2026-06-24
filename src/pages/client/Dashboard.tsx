@@ -28,6 +28,7 @@ import * as XLSX from "xlsx";
 import { PixScannerButton } from "../../components/PixScannerButton";
 
 export function ClientDashboard() {
+  const [activeDashboardTab, setActiveDashboardTab] = useState<'geral' | 'situacao'>('geral');
   const [data, setData] = useState<any>(null);
   const [selectedCompetence, setSelectedCompetence] = useState(format(subMonths(new Date(), 1), "MM/yyyy"));
   const [isUploading, setIsUploading] = useState(false);
@@ -45,7 +46,6 @@ export function ClientDashboard() {
 
   const [billingForm, setBillingForm] = useState({ servicesRevenue: 0, salesRevenue: 0, totalIncomes: 0, servicesTaken: 0 });
   const [showBillingForm, setShowBillingForm] = useState(false);
-  const [showSitFisModal, setShowSitFisModal] = useState(false);
 
   const loadData = async () => {
     setIsRefreshing(true);
@@ -448,6 +448,24 @@ export function ClientDashboard() {
         </div>
       </header>
 
+      <div className="flex gap-2 mt-6 overflow-x-auto pb-2 border-b border-slate-100 dark:border-slate-800">
+        <button
+          onClick={() => setActiveDashboardTab('geral')}
+          className={`px-4 py-2 text-sm font-bold rounded-t-xl transition-colors ${activeDashboardTab === 'geral' ? 'text-indigo-600 dark:text-indigo-400 border-b-2 border-indigo-600 dark:border-indigo-400' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`}
+        >
+          Visão Geral
+        </button>
+        <button
+          onClick={() => setActiveDashboardTab('situacao')}
+          className={`px-4 py-2 text-sm font-bold rounded-t-xl transition-colors ${activeDashboardTab === 'situacao' ? 'text-indigo-600 dark:text-indigo-400 border-b-2 border-indigo-600 dark:border-indigo-400' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'} flex items-center gap-2`}
+        >
+          Situação Fiscal
+          {hasPendingSitFis && <span className="w-2 h-2 rounded-full bg-red-500"></span>}
+        </button>
+      </div>
+
+      {activeDashboardTab === 'geral' && (
+        <div className="space-y-6 mt-6">
           {/* SATELLITE COMMUNICATIONS FROM ACCOUNTANT */}
           {data.messages && data.messages.filter((m: any) => !m.read).map((msg: any) => (
             <div key={msg.id} className="bg-indigo-50/70 dark:bg-slate-800/40 backdrop-blur-md border border-indigo-100/40 dark:border-slate-700/60 rounded-3xl p-4 flex items-start shadow-xs">
@@ -649,10 +667,8 @@ export function ClientDashboard() {
 
         {/* Stat 3: Situação Fiscal */}
         <div 
-          className={`bg-white dark:bg-slate-800/90 border border-slate-100 dark:border-slate-800 p-5 rounded-3xl shadow-sm transition-shadow flex items-center justify-between ${hasPendingSitFis ? 'cursor-pointer hover:shadow-md ring-2 ring-red-500/20' : 'hover:shadow-md'}`}
-          onClick={() => {
-             if (hasPendingSitFis) setShowSitFisModal(true);
-          }}
+          className={`bg-white dark:bg-slate-800/90 border border-slate-100 dark:border-slate-800 p-5 rounded-3xl shadow-sm transition-shadow flex items-center justify-between ${hasPendingSitFis ? 'cursor-pointer hover:shadow-md ring-2 ring-red-500/20' : 'hover:shadow-md cursor-pointer'}`}
+          onClick={() => setActiveDashboardTab('situacao')}
         >
           <div className="space-y-1">
             <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">SITUAÇÃO PERANTE À RECEITA</p>
@@ -801,65 +817,65 @@ export function ClientDashboard() {
         </div>
 
       </div>
+      </div>
+      )}
 
-      {showSitFisModal && sitFisDoc && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white dark:bg-slate-900 w-full max-w-2xl rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col max-h-[90vh]">
+      {activeDashboardTab === 'situacao' && (
+        <div className="mt-6">
+          <div className="bg-white dark:bg-slate-900 w-full rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 flex flex-col">
              <div className="flex items-center justify-between p-5 border-b border-slate-100 dark:border-slate-800">
                 <div>
-                   <h2 className="text-lg font-bold text-slate-800 dark:text-white">Saúde Fiscal Detalhada</h2>
-                   <p className="text-xs text-slate-500 uppercase">{data.client.companyName} ({data.client.cnpj})</p>
+                   <h2 className="text-lg font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                     <AlertCircle className="w-5 h-5 text-indigo-500" /> Saúde Fiscal Detalhada
+                   </h2>
+                   <p className="text-xs text-slate-500 uppercase mt-1">{data.client.companyName} ({data.client.cnpj})</p>
                 </div>
-                <button 
-                  onClick={() => setShowSitFisModal(false)}
-                  className="p-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 rounded-xl transition-colors"
-                >
-                  <X className="w-5 h-5" />
-                </button>
              </div>
              
-             <div className="p-6 overflow-y-auto space-y-4">
-                {sitFisDoc.extractedData.map((item: any, idx: number) => {
-                   const isPending = String(item.status).toUpperCase() === "PENDENTE";
-                   return (
-                      <div key={idx} className="border border-slate-100 dark:border-slate-800 rounded-xl p-4 bg-slate-50/50 dark:bg-slate-800/20">
-                         <div className="flex items-center justify-between mb-2">
-                            <h4 className="font-bold text-slate-700 dark:text-slate-300 flex items-center gap-2">
-                               {isPending ? <AlertCircle className="w-4 h-4 text-red-500" /> : <CheckCircle className="w-4 h-4 text-emerald-500" />}
-                               {item.orgao || "Situação"}
-                            </h4>
-                            <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${isPending ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>
-                               {item.status || (isPending ? "Pendente" : "Regular")}
-                            </span>
-                         </div>
-                         {item.descricao && (
-                           <p className="text-sm text-slate-600 dark:text-slate-400 mt-2">
-                             {item.descricao}
-                           </p>
-                         )}
-                         {item.competencias && (
-                           <div className="mt-3 flex flex-wrap gap-2">
-                             {item.competencias.map((comp: string, i: number) => (
-                               <span key={i} className="px-2 py-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-medium text-slate-500">
-                                 {comp}
-                               </span>
-                             ))}
+             <div className="p-6 space-y-4">
+                {!sitFisDoc || !sitFisDoc.extractedData ? (
+                  <div className="py-12 text-center rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
+                    <CheckCircle className="w-10 h-10 text-emerald-400 dark:text-emerald-500/50 mx-auto mb-2" />
+                    <h4 className="font-bold text-slate-800 dark:text-slate-300">Nenhum Relatório Recente</h4>
+                    <p className="text-xs text-slate-500 mt-1">Ainda não recebemos o relatório de situação fiscal deste mês.</p>
+                  </div>
+                ) : (
+                  sitFisDoc.extractedData.map((item: any, idx: number) => {
+                     const isPending = String(item.status).toUpperCase() === "PENDENTE";
+                     return (
+                        <div key={idx} className="border border-slate-100 dark:border-slate-800 rounded-xl p-4 bg-slate-50/50 dark:bg-slate-800/20">
+                           <div className="flex items-center justify-between mb-2">
+                              <h4 className="font-bold text-slate-700 dark:text-slate-300 flex items-center gap-2">
+                                 {isPending ? <AlertCircle className="w-4 h-4 text-red-500" /> : <CheckCircle className="w-4 h-4 text-emerald-500" />}
+                                 {item.orgao || "Situação"}
+                              </h4>
+                              <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${isPending ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                                 {item.status || (isPending ? "Pendente" : "Regular")}
+                              </span>
                            </div>
-                         )}
-                      </div>
-                   )
-                })}
-                <div className="text-right">
-                  <p className="text-[10px] text-slate-400 mt-2">Atualizado em: {format(parseISO(sitFisDoc.createdAt), "dd/MM/yyyy HH:mm:ss")}</p>
-                </div>
-             </div>
-             <div className="p-4 border-t border-slate-100 dark:border-slate-800 flex justify-end">
-                <button 
-                  onClick={() => setShowSitFisModal(false)}
-                  className="px-4 py-2 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-semibold text-sm rounded-xl transition-colors"
-                >
-                  Fechar Detalhes
-                </button>
+                           {item.descricao && (
+                             <p className="text-sm text-slate-600 dark:text-slate-400 mt-2">
+                               {item.descricao}
+                             </p>
+                           )}
+                           {item.competencias && (
+                             <div className="mt-3 flex flex-wrap gap-2">
+                               {item.competencias.map((comp: string, i: number) => (
+                                 <span key={i} className="px-2 py-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-medium text-slate-500">
+                                   {comp}
+                                 </span>
+                               ))}
+                             </div>
+                           )}
+                        </div>
+                     );
+                  })
+                )}
+                {sitFisDoc && (
+                  <div className="text-right">
+                    <p className="text-[10px] text-slate-400 mt-2">Atualizado em: {format(parseISO(sitFisDoc.createdAt), "dd/MM/yyyy HH:mm:ss")}</p>
+                  </div>
+                )}
              </div>
           </div>
         </div>

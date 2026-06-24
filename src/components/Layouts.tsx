@@ -6,7 +6,7 @@ import { ThemeToggle } from "./ThemeToggle";
 
 export function ClientLayout() {
   const token = localStorage.getItem("clientToken") || sessionStorage.getItem("clientToken");
-  let user = {};
+  let user: any = {};
   try {
     user = JSON.parse(localStorage.getItem("clientUser") || sessionStorage.getItem("clientUser") || "{}");
   } catch (e) {

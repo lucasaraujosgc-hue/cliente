@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { Send, Bell, CheckSquare, Square } from "lucide-react";
 
 export function AccountantNotifications() {
