@@ -25,6 +25,7 @@ import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { format, parse, subMonths, isBefore, isAfter, isEqual, parseISO, differenceInDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import * as XLSX from "xlsx";
+import { PixScannerButton } from "../../components/PixScannerButton";
 
 export function ClientDashboard() {
   const [data, setData] = useState<any>(null);
@@ -571,7 +572,7 @@ export function ClientDashboard() {
                             </>
                           )}
 
-                          {doc.pixCode && (
+                          {doc.pixCode ? (
                             <button 
                               onClick={() => handleCopyCode(doc.id, doc.pixCode)}
                               className="h-10 px-3 bg-indigo-50 dark:bg-indigo-900/30 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 border border-indigo-100 dark:border-indigo-800/50 text-indigo-700 dark:text-indigo-300 text-xs font-bold rounded-xl transition-all flex items-center justify-center min-w-[100px]"
@@ -586,6 +587,10 @@ export function ClientDashboard() {
                                 </span>
                               )}
                             </button>
+                          ) : (
+                            doc.fileUrl && doc.fileUrl.toLowerCase().endsWith(".pdf") && (
+                              <PixScannerButton docId={doc.id} fileUrl={doc.fileUrl} />
+                            )
                           )}
 
 
@@ -653,9 +658,13 @@ export function ClientDashboard() {
             <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">SITUAÇÃO PERANTE À RECEITA</p>
             <h3 className="text-lg font-extrabold text-slate-900 dark:text-white flex items-center gap-1.5">
               {hasPendingSitFis ? (
-                <span className="text-red-500 dark:text-red-400 flex items-center gap-1 cursor-pointer underline decoration-dotted">Restrições 🔴</span>
+                <span className="text-red-500 dark:text-red-400 flex items-center gap-1 cursor-pointer underline decoration-dotted">
+                  {sitFisDoc?.extractedData?.find((d: any) => d.orgao === 'RFB')?.status || "PENDENTE"} 🔴
+                </span>
               ) : (
-                <span className="text-emerald-600 dark:text-emerald-400 flex items-center gap-1">Regular 🟢</span>
+                <span className="text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                  {sitFisDoc?.extractedData?.find((d: any) => d.orgao === 'RFB')?.status || "REGULAR"} 🟢
+                </span>
               )}
             </h3>
             <p className="text-[10px] text-slate-500">Cadastro de CNPJ e regularidade</p>
