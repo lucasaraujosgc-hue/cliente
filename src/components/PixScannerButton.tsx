@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Copy, Check, QrCode } from 'lucide-react';
+import { Copy, Check } from 'lucide-react';
 import * as pdfjsLib from 'pdfjs-dist';
 import jsQR from 'jsqr';
 
@@ -10,117 +10,165 @@ interface PixScannerButtonProps {
   fileUrl: string;
 }
 
+// ─── helpers ────────────────────────────────────────────────────────────────
+
+/**
+ * Render one PDF page to a canvas at the given scale.
+ * Caller is responsible for freeing memory (canvas.width = 0).
+ */
+async function renderPage(
+  page: pdfjsLib.PDFPageProxy,
+  scale: number
+): Promise<{ canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D }> {
+  const viewport = page.getViewport({ scale });
+  const canvas = document.createElement('canvas');
+  canvas.width = viewport.width;
+  canvas.height = viewport.height;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
+  // @ts-ignore – render() typings vary across pdfjs versions
+  await page.render({ canvasContext: ctx, viewport }).promise;
+  return { canvas, ctx };
+}
+
+/**
+ * Validates that a decoded string is a real PIX payload:
+ *  - starts with 000201 (EMV header)
+ *  - contains br.gov.bcb.pix domain
+ *  - contains 5802BR (country code field)
+ *  - ends with 6304 + 4 hex chars (CRC-16)
+ */
+function isPixPayload(data: string): boolean {
+  return (
+    data.startsWith('000201') &&
+    /br\.gov\.bcb\.pix/i.test(data) &&
+    data.includes('5802BR') &&
+    /6304[A-Fa-f0-9]{4}$/.test(data)
+  );
+}
+
+/**
+ * Try jsQR on the full canvas, then on quadrant crops.
+ * Quadrant order: BR → BL → TR → TL (QR is usually bottom-right).
+ */
+function tryDecodeCanvas(
+  ctx: CanvasRenderingContext2D,
+  w: number,
+  h: number
+): string | null {
+  const full = ctx.getImageData(0, 0, w, h);
+  const hit = jsQR(full.data, full.width, full.height);
+  if (hit && isPixPayload(hit.data)) return hit.data;
+
+  const hw = Math.floor(w / 2);
+  const hh = Math.floor(h / 2);
+  const regions: [number, number, number, number][] = [
+    [hw, hh, hw, hh], // bottom-right
+    [0,  hh, hw, hh], // bottom-left
+    [hw, 0,  hw, hh], // top-right
+    [0,  0,  hw, hh], // top-left
+  ];
+
+  for (const [sx, sy, sw, sh] of regions) {
+    const crop = ctx.getImageData(sx, sy, sw, sh);
+    const result = jsQR(crop.data, crop.width, crop.height);
+    if (result && isPixPayload(result.data)) return result.data;
+  }
+
+  return null;
+}
+
+/**
+ * Extract PIX payload from the PDF text layer (copia-e-cola).
+ * Strips whitespace first, then matches 000201…6304XXXX.
+ */
+function extractPixFromText(text: string): string | null {
+  const flat = text.replace(/\s+/g, '');
+  // Anchor: starts at 000201, ends at 6304 + 4 hex chars
+  const m = flat.match(/000201\S+6304[A-Fa-f0-9]{4}/);
+  if (!m) return null;
+  return isPixPayload(m[0]) ? m[0] : null;
+}
+
+// ─── scanner ────────────────────────────────────────────────────────────────
+
+// Scales ordered for best QR detection vs. cost:
+// 3 → sharp enough for most codes; 4 → catches small QRs; 2 → fallback if memory is tight
+const SCALES = [3, 4, 2] as const;
+
+/**
+ * Scans only page 1 (virtually all tax PDFs are single-page).
+ * Strategy: QR image scan first (3 scales + quadrant crops), then text layer.
+ */
+async function scanPdfForPix(fileUrl: string): Promise<string | null> {
+  const pdf = await pdfjsLib.getDocument({ url: fileUrl }).promise;
+  const page = await pdf.getPage(1);
+
+  // ── 1. QR image scan (priority) ──────────────────────────────────────────
+  for (const scale of SCALES) {
+    const { canvas, ctx } = await renderPage(page, scale);
+    const found = tryDecodeCanvas(ctx, canvas.width, canvas.height);
+
+    // Free GPU/memory immediately after each attempt
+    canvas.width = 0;
+    canvas.height = 0;
+
+    if (found) return found;
+  }
+
+  // ── 2. Text layer fallback (GFD FGTS Digital, some DARFs) ────────────────
+  const textContent = await page.getTextContent();
+  const raw = (textContent.items as any[]).map((i) => i.str).join('');
+  return extractPixFromText(raw);
+}
+
+// ─── component ──────────────────────────────────────────────────────────────
+
 export function PixScannerButton({ docId, fileUrl }: PixScannerButtonProps) {
   const [pixCode, setPixCode] = useState<string | null>(null);
-  const [isScanning, setIsScanning] = useState(false);
-  const [scanned, setScanned] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const [ready, setReady]     = useState(false);
+  const [copied, setCopied]   = useState(false);
 
   useEffect(() => {
-    // Automatically try to scan in background when component mounts to hide button if no PIX
-    let mounted = true;
-    
-    const preScan = async () => {
-      try {
-        const loadingTask = pdfjsLib.getDocument({ url: fileUrl });
-        const pdf = await loadingTask.promise;
-        let foundCode = null;
+    let alive = true;
+    const cacheKey = `pix-${docId}`;
 
-        // 1. Try to find the PIX code in the PDF text (Copia e Cola)
-        for (let i = 1; i <= Math.min(pdf.numPages, 3); i++) {
-          if (!mounted) break;
-          const page = await pdf.getPage(i);
-          const textContent = await page.getTextContent();
-          const textItems = textContent.items.map((item: any) => item.str);
-          const fullText = textItems.join("");
-          // Regex to match PIX code: starts with 000201, contains PIX domain, ends with 6304 + 4 hex chars
-          const pixRegex = /000201.*?(?:BR\.GOV\.BCB\.PIX|br\.gov\.bcb\.pix).*?6304[A-Fa-f0-9]{4}/i;
-          const match = fullText.match(pixRegex);
-          if (match) {
-            foundCode = match[0];
-            break;
-          }
-          // Also check by joining with spaces or removing spaces just in case
-          const textNoSpaces = textItems.join("").replace(/\s+/g, "");
-          const matchNoSpaces = textNoSpaces.match(pixRegex);
-          if (matchNoSpaces) {
-            foundCode = matchNoSpaces[0];
-            break;
-          }
-        }
+    // ── Cache hit: skip scanning entirely ──
+    const cached = localStorage.getItem(cacheKey);
+    if (cached) {
+      setPixCode(cached);
+      setReady(true);
+      return;
+    }
 
-        // 2. Fallback to image scanning if not found in text
-        if (!foundCode) {
-          for (let i = 1; i <= Math.min(pdf.numPages, 3); i++) {
-            if (!mounted) break;
-            const page = await pdf.getPage(i);
-            
-            const scales = [2.0, 3.0, 1.5]; // Try multiple scales for better detection
-            for (const scale of scales) {
-              const viewport = page.getViewport({ scale });
-              const canvas = document.createElement("canvas");
-              const context = canvas.getContext("2d", { willReadFrequently: true });
-              if (!context) continue;
-              
-              canvas.height = viewport.height;
-              canvas.width = viewport.width;
-              
-              // @ts-ignore
-              await page.render({
-                canvasContext: context,
-                viewport: viewport
-              }).promise;
-              
-              const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
-              const code = jsQR(imageData.data, imageData.width, imageData.height);
-              
-              if (code && code.data.startsWith("000201") && (code.data.includes("BR.GOV.BCB.PIX") || code.data.toLowerCase().includes("br.gov.bcb.pix"))) {
-                foundCode = code.data;
-                break; // Found it
-              }
-            }
-            if (foundCode) break;
-          }
-        }
+    scanPdfForPix(fileUrl)
+      .then((code) => {
+        if (!alive) return;
+        if (code) localStorage.setItem(cacheKey, code);
+        setPixCode(code);
+        setReady(true);
+      })
+      .catch(() => {
+        if (alive) setReady(true);
+      });
 
-        if (mounted) {
-          setScanned(true);
-          if (foundCode) {
-            setPixCode(foundCode);
-          }
-        }
-      } catch (e) {
-        if (mounted) setScanned(true);
-      }
-    };
-    
-    preScan();
-    return () => { mounted = false; };
-  }, [fileUrl]);
+    return () => { alive = false; };
+  }, [docId, fileUrl]);
 
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
+  // Hidden while scanning or when no PIX was found
+  if (!ready || !pixCode) return null;
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(pixCode);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleCopyClick = () => {
-    if (pixCode) {
-      copyToClipboard(pixCode);
-    }
-  };
-
-  // hide if scanned and no pix code found, or if scanning isn't done yet hide to avoid flicker of wrong state
-  if (!scanned || (scanned && !pixCode)) {
-    return null; 
-  }
-
   return (
-    <button 
-      onClick={handleCopyClick}
+    <button
+      onClick={handleCopy}
       className={`h-10 px-3 border text-xs font-bold rounded-xl transition-all flex items-center justify-center min-w-[100px] ${
-        copied 
-          ? 'bg-emerald-50 border-emerald-200 text-emerald-700 dark:bg-emerald-900/30 dark:border-emerald-800/50 dark:text-emerald-400' 
+        copied
+          ? 'bg-emerald-50 border-emerald-200 text-emerald-700 dark:bg-emerald-900/30 dark:border-emerald-800/50 dark:text-emerald-400'
           : 'bg-indigo-50 dark:bg-indigo-900/30 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 border-indigo-100 dark:border-indigo-800/50 text-indigo-700 dark:text-indigo-300'
       }`}
     >
