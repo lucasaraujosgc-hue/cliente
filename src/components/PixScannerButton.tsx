@@ -31,30 +31,46 @@ async function renderPage(
 }
 
 /**
- * Validates that a decoded string is a real PIX payload:
- *  - starts with 000201 (EMV header)
- *  - contains br.gov.bcb.pix domain
- *  - contains 5802BR (country code field)
- *  - ends with 6304 + 4 hex chars (CRC-16)
+ * Validates that a decoded string is a real PIX payload.
+ *
+ * Two payload formats exist:
+ *
+ *  A) Documentos fiscais (DAS, FGTS, DARF):
+ *     000201 … br.gov.bcb.pix … 5802BR … 6304XXXX
+ *
+ *  B) Boletos bancários com QR Pix (Inter, Sicoob, etc.):
+ *     000201 … br.gov.bcb.pix … 6304XXXX
+ *     (5802BR está codificado dentro do campo EMV, não aparece literalmente)
+ *
+ * Regras obrigatórias para ambos:
+ *  - começa com 000201 (cabeçalho EMV)
+ *  - contém br.gov.bcb.pix (identifica como Pix)
+ *  - termina com 6304 + 4 hex (CRC-16 obrigatório pelo BACEN)
  */
 function isPixPayload(data: string): boolean {
   return (
     data.startsWith('000201') &&
     /br\.gov\.bcb\.pix/i.test(data) &&
-    data.includes('5802BR') &&
     /6304[A-Fa-f0-9]{4}$/.test(data)
   );
 }
 
 /**
- * Try jsQR on the full canvas, then on quadrant crops.
- * Quadrant order: BR → BL → TR → TL (QR is usually bottom-right).
+ * Try jsQR on the full canvas first, then on all four quadrant crops.
+ *
+ * Quadrant order: TL → BR → BL → TR
+ *  - TL first: boletos Inter/Sicoob colocam o QR no canto superior esquerdo
+ *  - BR segundo: documentos fiscais (DAS, FGTS) colocam no canto inferior direito
+ *
+ * A varredura full-page já captura qualquer posição antes dos crops;
+ * os crops existem para aumentar a resolução efetiva sobre QRs pequenos.
  */
 function tryDecodeCanvas(
   ctx: CanvasRenderingContext2D,
   w: number,
   h: number
 ): string | null {
+  // Full page — detecta QR em qualquer posição
   const full = ctx.getImageData(0, 0, w, h);
   const hit = jsQR(full.data, full.width, full.height);
   if (hit && isPixPayload(hit.data)) return hit.data;
@@ -62,10 +78,10 @@ function tryDecodeCanvas(
   const hw = Math.floor(w / 2);
   const hh = Math.floor(h / 2);
   const regions: [number, number, number, number][] = [
-    [hw, hh, hw, hh], // bottom-right
+    [0,  0,  hw, hh], // top-left    → boletos (Inter, Sicoob)
+    [hw, hh, hw, hh], // bottom-right → fiscais (DAS, FGTS, DARF)
     [0,  hh, hw, hh], // bottom-left
     [hw, 0,  hw, hh], // top-right
-    [0,  0,  hw, hh], // top-left
   ];
 
   for (const [sx, sy, sw, sh] of regions) {
