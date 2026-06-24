@@ -6,7 +6,13 @@ import { ThemeToggle } from "./ThemeToggle";
 
 export function ClientLayout() {
   const token = localStorage.getItem("clientToken") || sessionStorage.getItem("clientToken");
-  const user = JSON.parse(localStorage.getItem("clientUser") || sessionStorage.getItem("clientUser") || "{}");
+  let user = {};
+  try {
+    user = JSON.parse(localStorage.getItem("clientUser") || sessionStorage.getItem("clientUser") || "{}");
+  } catch (e) {
+    localStorage.removeItem("clientUser");
+    sessionStorage.removeItem("clientUser");
+  }
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -42,6 +48,16 @@ export function ClientLayout() {
   if (!token) {
     return <Navigate to="/login" replace />;
   }
+
+  useEffect(() => {
+    const handleUnauthorized = () => {
+      handleLogout();
+    };
+    window.addEventListener("unauthorized", handleUnauthorized);
+    return () => {
+      window.removeEventListener("unauthorized", handleUnauthorized);
+    };
+  }, []);
 
   const handleLogout = () => {
     localStorage.removeItem("clientToken");
@@ -285,6 +301,16 @@ export function AccountantLayout() {
   if (!token) {
     return <Navigate to="/admin/login" replace />;
   }
+
+  useEffect(() => {
+    const handleUnauthorized = () => {
+      handleLogout();
+    };
+    window.addEventListener("unauthorized", handleUnauthorized);
+    return () => {
+      window.removeEventListener("unauthorized", handleUnauthorized);
+    };
+  }, []);
 
   const handleLogout = () => {
     localStorage.removeItem("accountantToken");

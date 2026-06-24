@@ -19,8 +19,7 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
-  Eye,
-  X
+  Eye
 } from "lucide-react";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Legend } from "recharts";
 import { format, parse, subMonths, isBefore, isAfter, isEqual, parseISO, differenceInDays } from "date-fns";
@@ -38,7 +37,10 @@ export function ClientDashboard() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const excelFileRef = useRef<HTMLInputElement>(null);
-  const user = JSON.parse(localStorage.getItem("clientUser") || sessionStorage.getItem("clientUser") || "{}");
+  let user = {};
+  try {
+    user = JSON.parse(localStorage.getItem("clientUser") || sessionStorage.getItem("clientUser") || "{}");
+  } catch (e) {}
 
   const [billingForm, setBillingForm] = useState({ servicesRevenue: 0, salesRevenue: 0, totalIncomes: 0, servicesTaken: 0 });
   const [showBillingForm, setShowBillingForm] = useState(false);
