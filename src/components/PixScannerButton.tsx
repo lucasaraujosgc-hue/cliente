@@ -12,10 +12,6 @@ interface PixScannerButtonProps {
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
-/**
- * Render one PDF page to a canvas at the given scale.
- * Caller is responsible for freeing memory (canvas.width = 0).
- */
 async function renderPage(
   page: pdfjsLib.PDFPageProxy,
   scale: number
@@ -25,27 +21,21 @@ async function renderPage(
   canvas.width = viewport.width;
   canvas.height = viewport.height;
   const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
-  // @ts-ignore – render() typings vary across pdfjs versions
+  // @ts-ignore
   await page.render({ canvasContext: ctx, viewport }).promise;
   return { canvas, ctx };
 }
 
 /**
- * Validates that a decoded string is a real PIX payload.
+ * Validates that a decoded string is a real PIX payload (EMV format).
  *
- * Two payload formats exist:
+ * Rules:
+ *  - Starts with 000201 (EMV header)
+ *  - Contains br.gov.bcb.pix (identifies as Pix)
+ *  - Ends with 6304 + 4 hex chars (mandatory CRC-16 from BACEN)
  *
- *  A) Documentos fiscais (DAS, FGTS, DARF):
- *     000201 … br.gov.bcb.pix … 5802BR … 6304XXXX
- *
- *  B) Boletos bancários com QR Pix (Inter, Sicoob, etc.):
- *     000201 … br.gov.bcb.pix … 6304XXXX
- *     (5802BR está codificado dentro do campo EMV, não aparece literalmente)
- *
- * Regras obrigatórias para ambos:
- *  - começa com 000201 (cabeçalho EMV)
- *  - contém br.gov.bcb.pix (identifica como Pix)
- *  - termina com 6304 + 4 hex (CRC-16 obrigatório pelo BACEN)
+ * Note: we accept ANY characters between start and end (including spaces)
+ * because some payloads like FGTS contain "CAIXA ECONOMICA FEDERAL".
  */
 function isPixPayload(data: string): boolean {
   return (
@@ -56,35 +46,57 @@ function isPixPayload(data: string): boolean {
 }
 
 /**
- * Try jsQR on the full canvas first, then on all four quadrant crops.
+ * Try jsQR on the full canvas first, then on quadrant crops.
  *
  * Quadrant order: TL → BR → BL → TR
- *  - TL first: boletos Inter/Sicoob colocam o QR no canto superior esquerdo
- *  - BR segundo: documentos fiscais (DAS, FGTS) colocam no canto inferior direito
+ *  - TL first: boletos Inter/Sicoob place QR in the top-left corner
+ *  - BR second: tax docs (DAS, FGTS) place it in the bottom-right
  *
- * A varredura full-page já captura qualquer posição antes dos crops;
- * os crops existem para aumentar a resolução efetiva sobre QRs pequenos.
+ * Full-page scan already catches any position; crops improve effective
+ * resolution for small QR codes.
+ *
+ * FIX (Inter): Added higher-resolution crops (2/3 of each dimension)
+ * to better detect small QR codes embedded in boleto layouts.
  */
 function tryDecodeCanvas(
   ctx: CanvasRenderingContext2D,
   w: number,
   h: number
 ): string | null {
-  // Full page — detecta QR em qualquer posição
+  // Full page
   const full = ctx.getImageData(0, 0, w, h);
   const hit = jsQR(full.data, full.width, full.height);
   if (hit && isPixPayload(hit.data)) return hit.data;
 
   const hw = Math.floor(w / 2);
   const hh = Math.floor(h / 2);
-  const regions: [number, number, number, number][] = [
+
+  // Standard quadrant crops (half-width, half-height)
+  const quadrants: [number, number, number, number][] = [
     [0,  0,  hw, hh], // top-left    → boletos (Inter, Sicoob)
     [hw, hh, hw, hh], // bottom-right → fiscais (DAS, FGTS, DARF)
     [0,  hh, hw, hh], // bottom-left
     [hw, 0,  hw, hh], // top-right
   ];
 
-  for (const [sx, sy, sw, sh] of regions) {
+  for (const [sx, sy, sw, sh] of quadrants) {
+    const crop = ctx.getImageData(sx, sy, sw, sh);
+    const result = jsQR(crop.data, crop.width, crop.height);
+    if (result && isPixPayload(result.data)) return result.data;
+  }
+
+  // FIX (Inter boleto): larger crops covering 2/3 of each axis —
+  // the Inter QR sits in the upper-left third of the page; standard
+  // half-crops can miss it when the QR is positioned near the edge.
+  const tw = Math.floor(w * 2 / 3);
+  const th = Math.floor(h * 2 / 3);
+
+  const largerRegions: [number, number, number, number][] = [
+    [0,  0,  tw, th], // top-left 2/3
+    [w - tw, h - th, tw, th], // bottom-right 2/3
+  ];
+
+  for (const [sx, sy, sw, sh] of largerRegions) {
     const crop = ctx.getImageData(sx, sy, sw, sh);
     const result = jsQR(crop.data, crop.width, crop.height);
     if (result && isPixPayload(result.data)) return result.data;
@@ -95,45 +107,67 @@ function tryDecodeCanvas(
 
 /**
  * Extract PIX payload from the PDF text layer (copia-e-cola).
- * Strips whitespace first, then matches 000201…6304XXXX.
+ *
+ * FIX (FGTS): The previous regex used \S+ which stops at whitespace.
+ * FGTS payloads contain spaces (e.g. "CAIXA ECONOMICA FEDERAL"),
+ * so we now match any character (including spaces) between the
+ * 000201 anchor and the 6304XXXX CRC tail.
+ *
+ * We deliberately allow spaces in the middle but still require
+ * the payload to start right at 000201 and end at 6304+4hex.
  */
 function extractPixFromText(text: string): string | null {
+  // Strategy 1: strip all whitespace and match (catches most cases)
   const flat = text.replace(/\s+/g, '');
-  // Anchor: starts at 000201, ends at 6304 + 4 hex chars
-  const m = flat.match(/000201\S+6304[A-Fa-f0-9]{4}/);
-  if (!m) return null;
-  return isPixPayload(m[0]) ? m[0] : null;
+  const m1 = flat.match(/000201.+?6304[A-Fa-f0-9]{4}/);
+  if (m1 && isPixPayload(m1[0])) return m1[0];
+
+  // Strategy 2: match with spaces allowed — for FGTS-style payloads
+  // where "CAIXA ECONOMICA FEDERAL" etc. appear in the text layer
+  // without the surrounding whitespace stripped.
+  const m2 = text.match(/000201[\s\S]+?6304[A-Fa-f0-9]{4}/);
+  if (m2) {
+    // Collapse internal whitespace so the final payload is a clean string
+    const candidate = m2[0].replace(/\s+/g, ' ').trim();
+    if (isPixPayload(candidate)) return candidate;
+
+    // Also try fully stripped version of this match
+    const stripped = m2[0].replace(/\s+/g, '');
+    if (isPixPayload(stripped)) return stripped;
+  }
+
+  return null;
 }
 
 // ─── scanner ────────────────────────────────────────────────────────────────
 
 // Scales ordered for best QR detection vs. cost:
-// 3 → sharp enough for most codes; 4 → catches small QRs; 2 → fallback if memory is tight
+// 3 → sharp enough for most codes; 4 → catches small QRs; 2 → fallback
 const SCALES = [3, 4, 2] as const;
 
 /**
  * Scans only page 1 (virtually all tax PDFs are single-page).
- * Strategy: QR image scan first (3 scales + quadrant crops), then text layer.
+ *
+ * Strategy order:
+ *  1. QR image scan (3 scales + quadrant crops + 2/3 crops for Inter)
+ *  2. Text layer (GFD FGTS Digital, some DARFs) — fixed to allow spaces
  */
 async function scanPdfForPix(fileUrl: string): Promise<string | null> {
   const pdf = await pdfjsLib.getDocument({ url: fileUrl }).promise;
   const page = await pdf.getPage(1);
 
-  // ── 1. QR image scan (priority) ──────────────────────────────────────────
+  // ── 1. QR image scan ─────────────────────────────────────────────────────
   for (const scale of SCALES) {
     const { canvas, ctx } = await renderPage(page, scale);
     const found = tryDecodeCanvas(ctx, canvas.width, canvas.height);
-
-    // Free GPU/memory immediately after each attempt
     canvas.width = 0;
     canvas.height = 0;
-
     if (found) return found;
   }
 
-  // ── 2. Text layer fallback (GFD FGTS Digital, some DARFs) ────────────────
+  // ── 2. Text layer fallback ────────────────────────────────────────────────
   const textContent = await page.getTextContent();
-  const raw = (textContent.items as any[]).map((i) => i.str).join('');
+  const raw = (textContent.items as any[]).map((i) => i.str).join(' ');
   return extractPixFromText(raw);
 }
 
@@ -148,7 +182,6 @@ export function PixScannerButton({ docId, fileUrl }: PixScannerButtonProps) {
     let alive = true;
     const cacheKey = `pix-${docId}`;
 
-    // ── Cache hit: skip scanning entirely ──
     const cached = localStorage.getItem(cacheKey);
     if (cached) {
       setPixCode(cached);
@@ -170,7 +203,6 @@ export function PixScannerButton({ docId, fileUrl }: PixScannerButtonProps) {
     return () => { alive = false; };
   }, [docId, fileUrl]);
 
-  // Hidden while scanning or when no PIX was found
   if (!ready || !pixCode) return null;
 
   const handleCopy = () => {
