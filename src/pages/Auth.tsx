@@ -131,6 +131,16 @@ export function Login() {
             >
               Acessar Plataforma
             </button>
+            
+            <div className="mt-4 text-center">
+              <button 
+                type="button"
+                onClick={() => navigate('/admin/login')}
+                className="text-xs text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+              >
+                Acesso para Contadores
+              </button>
+            </div>
           </form>
         </div>
       </div>
@@ -214,6 +224,16 @@ export function AccountantLogin() {
           >
             Entrar
           </button>
+
+          <div className="mt-4 text-center">
+            <button 
+              type="button"
+              onClick={() => navigate('/login')}
+              className="text-xs text-slate-400 hover:text-slate-200"
+            >
+              Voltar para Área do Cliente
+            </button>
+          </div>
         </form>
       </div>
     </div>

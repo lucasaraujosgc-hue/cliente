@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { MemoryRouter as Router, Routes, Route, Navigate } from "react-router-dom";
 import { ThemeProvider } from "next-themes";
 import { ClientLayout, AccountantLayout } from "./components/Layouts";
 import { Login, AccountantLogin } from "./pages/Auth";
@@ -20,7 +20,7 @@ export default function App() {
   return (
     // @ts-ignore
     <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
-      <BrowserRouter>
+      <Router>
         <Routes>
           {/* Auth */}
           <Route path="/login" element={<Login />} />
@@ -43,7 +43,7 @@ export default function App() {
             <Route path="notifications" element={<AccountantNotifications />} />
           </Route>
         </Routes>
-      </BrowserRouter>
+      </Router>
     </ThemeProvider>
   );
 }

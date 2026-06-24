@@ -46,7 +46,7 @@ const storage = multer.diskStorage({
   }
 })
 const upload = multer({ storage: storage, limits: { fileSize: 10 * 1024 * 1024 } }); // 10 MB limit
-const JWT_SECRET = crypto.randomBytes(32).toString("hex");
+const JWT_SECRET = process.env.JWT_SECRET || "virgula-secret-key-persistent-across-deploys-12345";
 
 // Email Transporter
 const transporter = nodemailer.createTransport({
