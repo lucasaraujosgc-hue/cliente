@@ -24,103 +24,148 @@ export function PixScannerButton({ docId, fileUrl }: PixScannerButtonProps) {
       try {
         const loadingTask = pdfjsLib.getDocument({ url: fileUrl });
         const pdf = await loadingTask.promise;
-        let foundCode = null;
 
-        // 1. Try to find the PIX code in the PDF text (Copia e Cola)
+        let foundCode: string | null = null;
+
         for (let i = 1; i <= Math.min(pdf.numPages, 3); i++) {
           if (!mounted) break;
+
           const page = await pdf.getPage(i);
           const textContent = await page.getTextContent();
-          
-          // Regex to match PIX code: greedy to get the last 6304. Use [\s\S] to match newlines
-          const pixRegex = /000201[\s\S]+?(?:BR\.GOV\.BCB\.PIX|br\.gov\.bcb\.pix)[\s\S]+6304[A-Fa-f0-9]{4}/i;
-          
-          // O payload completo existe em um único span no text layer
-          for (const item of textContent.items) {
-            const str = (item as any).str;
-            const match = str.match(pixRegex);
-            if (match) {
-              foundCode = match[0].replace(/\s+/g, "");
-              break;
+
+          const pageText = textContent.items
+            .map((item: any) => item.str)
+            .join(" ");
+
+          const normalized = textContent.items
+            .map((item: any) => item.str)
+            .join("")
+            .replace(/\s+/g, "");
+
+          const isFGTSDigital =
+            pageText.includes("GFD - Guia do FGTS Digital") ||
+            pageText.includes("FGTS Digital");
+
+          if (isFGTSDigital) {
+            const start = normalized.indexOf("000201");
+
+            if (start !== -1) {
+              const payload = normalized.substring(start);
+
+              const crcMatch = payload.match(/6304[A-Fa-f0-9]{4}/i);
+
+              if (crcMatch) {
+                const end =
+                  crcMatch.index! + crcMatch[0].length;
+
+                foundCode = payload.substring(0, end);
+
+                console.log(
+                  "[FGTS DIGITAL] PIX encontrado:",
+                  foundCode
+                );
+
+                break;
+              }
             }
           }
-          if (foundCode) break;
-
-          // Fallback: junta tudo com espaços e pega os tokens
-          const fullText = textContent.items.map((item: any) => item.str).join(" ");
-          
-          // Check the full joined text first
-          const fullMatch = fullText.match(pixRegex);
-          if (fullMatch) {
-            foundCode = fullMatch[0].replace(/\s+/g, "");
-            break;
-          }
-
-          const words = fullText.split(/\s+/);
-          for (const word of words) {
-            const match = word.match(pixRegex);
-            if (match) {
-              foundCode = match[0];
-              break;
-            }
-          }
-          if (foundCode) break;
         }
 
-        // 2. Fallback to image scanning if not found in text
         if (!foundCode) {
           for (let i = 1; i <= Math.min(pdf.numPages, 3); i++) {
             if (!mounted) break;
+
             const page = await pdf.getPage(i);
-            
+
             const crops = [
-              { scale: 4.0, x1: 0.04, y1: 0.20, x2: 0.33, y2: 0.44 }, // Inter slightly larger
-              { scale: 4.0, x1: 0.80, y1: 0.84, x2: 0.95, y2: 0.96 }, // DAS
-              { scale: 3.0, x1: 0.35, y1: 0.75, x2: 0.65, y2: 0.98 }, // FGTS bottom center
-              { scale: 1.5, x1: 0, y1: 0, x2: 1, y2: 1 }, // Fallback full page
+              { scale: 4.0, x1: 0.04, y1: 0.20, x2: 0.33, y2: 0.44 },
+              { scale: 4.0, x1: 0.80, y1: 0.84, x2: 0.95, y2: 0.96 },
+              { scale: 3.0, x1: 0.35, y1: 0.75, x2: 0.65, y2: 0.98 },
+              { scale: 1.5, x1: 0, y1: 0, x2: 1, y2: 1 }
             ];
-            
+
             for (const crop of crops) {
-              const viewport = page.getViewport({ scale: crop.scale });
+              const viewport = page.getViewport({
+                scale: crop.scale
+              });
+
               const cropX = viewport.width * crop.x1;
               const cropY = viewport.height * crop.y1;
-              const cropW = viewport.width * (crop.x2 - crop.x1);
-              const cropH = viewport.height * (crop.y2 - crop.y1);
-              
-              const canvas = document.createElement("canvas");
-              const context = canvas.getContext("2d", { willReadFrequently: true });
+              const cropW =
+                viewport.width * (crop.x2 - crop.x1);
+              const cropH =
+                viewport.height * (crop.y2 - crop.y1);
+
+              const canvas =
+                document.createElement("canvas");
+
+              const context = canvas.getContext("2d", {
+                willReadFrequently: true
+              });
+
               if (!context) continue;
-              
+
               canvas.width = cropW;
               canvas.height = cropH;
-              
-              // @ts-ignore
+
               await page.render({
                 canvasContext: context,
-                viewport: viewport,
-                transform: [1, 0, 0, 1, -cropX, -cropY]
+                viewport,
+                transform: [
+                  1,
+                  0,
+                  0,
+                  1,
+                  -cropX,
+                  -cropY
+                ]
               }).promise;
-              
-              const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
-              const code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: "attemptBoth" });
-              
-              if (code && code.data.startsWith("000201") && code.data.toLowerCase().includes("br.gov.bcb.pix") && code.data.toLowerCase().includes("5802br") && /6304[A-Fa-f0-9]{4}$/.test(code.data)) {
+
+              const imageData = context.getImageData(
+                0,
+                0,
+                canvas.width,
+                canvas.height
+              );
+
+              const code = jsQR(
+                imageData.data,
+                imageData.width,
+                imageData.height,
+                {
+                  inversionAttempts: "attemptBoth"
+                }
+              );
+
+              if (
+                code &&
+                code.data.startsWith("000201") &&
+                code.data
+                  .toLowerCase()
+                  .includes("br.gov.bcb.pix")
+              ) {
                 foundCode = code.data;
-                break; // Found it
+                break;
               }
             }
+
             if (foundCode) break;
           }
         }
 
         if (mounted) {
           setScanned(true);
+
           if (foundCode) {
             setPixCode(foundCode);
           }
         }
-      } catch (e) {
-        if (mounted) setScanned(true);
+      } catch (err) {
+        console.error(err);
+
+        if (mounted) {
+          setScanned(true);
+        }
       }
     };
     
