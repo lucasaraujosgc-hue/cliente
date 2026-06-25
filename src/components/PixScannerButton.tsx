@@ -143,7 +143,7 @@ function extractPixFromText(text: string): string | null {
 
 // Scales ordered for best QR detection vs. cost:
 // 3 → sharp enough for most codes; 4 → catches small QRs; 2 → fallback
-const SCALES = [3, 4, 2] as const;
+const SCALES = [9, 8, 7, 6, 5, 3, 4, 2] as const;
 
 /**
  * Scans only page 1 (virtually all tax PDFs are single-page).
