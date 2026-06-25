@@ -5,7 +5,7 @@ import crypto from "crypto";
 import nodemailer from "nodemailer";
 import multer from "multer";
 import { db } from "./db";
-import { clients, documents, billingData, messages, subscriptions, guiasGeradas } from "./schema";
+import { clients, documents, billingData, messages, subscriptions, guiasGeradas, serproConfig } from "./schema";
 import webpush from "web-push";
 
 // Generate VAPID keys if they don't exist in env. For development, we can generate them on the fly if needed.
@@ -986,6 +986,51 @@ export function setupRoutes(app: Express) {
 
   app.get("/api/vapidPublicKey", (req, res) => {
     res.send(vapidKeys.publicKey);
+  });
+
+  // SERPRO config
+  app.get("/api/pendencies/sitfis/config", verifyAccountantAuth, async (req, res) => {
+    try {
+      let config = await db.select().from(serproConfig).where(eq(serproConfig.usuarioId, 1)).limit(1);
+      if (config.length === 0) {
+        return res.json({ success: true, config: null });
+      }
+      res.json({ success: true, config: config[0] });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/pendencies/sitfis/config", verifyAccountantAuth, upload.single("cert"), async (req, res) => {
+    try {
+      const { consumerKey, consumerSecret, certSenha, cnpjContratante, ambiente } = req.body;
+      
+      const updateData: any = {
+        consumerKey,
+        consumerSecret,
+        cnpjContratante,
+        ambiente,
+        updatedAt: new Date()
+      };
+      
+      if (certSenha) updateData.certSenha = certSenha;
+      if (req.file) updateData.certPath = req.file.path;
+
+      let config = await db.select().from(serproConfig).where(eq(serproConfig.usuarioId, 1)).limit(1);
+      
+      if (config.length === 0) {
+        await db.insert(serproConfig).values({
+          usuarioId: 1,
+          ...updateData
+        });
+      } else {
+        await db.update(serproConfig).set(updateData).where(eq(serproConfig.id, config[0].id));
+      }
+
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
   });
 
   app.post("/api/notifications/subscribe", verifyClientAuth, async (req, res) => {

@@ -72,6 +72,18 @@ export const documentsRelations = relations(documents, ({ one }) => ({
 	}),
 }));
 
+export const serproConfig = pgTable('serpro_config', {
+  id: serial('id').primaryKey(),
+  usuarioId: integer('usuario_id').notNull().default(1),
+  consumerKey: text('consumer_key'),
+  consumerSecret: text('consumer_secret'),
+  certPath: text('cert_path'),
+  certSenha: text('cert_senha'),
+  cnpjContratante: text('cnpj_contratante'),
+  ambiente: text('ambiente').default('trial'),
+  updatedAt: timestamp('updated_at').defaultNow(),
+});
+
 export const guiasGeradas = pgTable('guias_geradas', {
   id: serial('id').primaryKey(),
   clientId: uuid('client_id').notNull().references(() => clients.id),

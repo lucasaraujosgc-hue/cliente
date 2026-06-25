@@ -351,6 +351,7 @@ export function AccountantLayout() {
       path: "/admin/gallery", 
       icon: Folder 
     },
+    { name: "Configurações", path: "/admin/settings", icon: Settings },
   ];
 
   const renderSidebarContent = () => (
