@@ -17,7 +17,6 @@ export function PixScannerButton({ docId, fileUrl }: PixScannerButtonProps) {
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
-    // Automatically try to scan in background when component mounts to hide button if no PIX
     let mounted = true;
     
     const preScan = async () => {
@@ -26,47 +25,66 @@ export function PixScannerButton({ docId, fileUrl }: PixScannerButtonProps) {
         const pdf = await loadingTask.promise;
         let foundCode = null;
 
-        // 1. Try to find the PIX code in the PDF text (Copia e Cola)
+        // 1. Try to find the PIX code in the PDF text
         for (let i = 1; i <= Math.min(pdf.numPages, 3); i++) {
           if (!mounted) break;
           const page = await pdf.getPage(i);
           const textContent = await page.getTextContent();
           const textItems = textContent.items.map((item: any) => item.str);
           const fullText = textItems.join("");
-          // Regex to match PIX code: starts with 000201, contains PIX domain, ends with 6304 + 4 hex chars. Use greedy to get the last 6304
-          const pixRegex = /000201[\s\S]*(?:BR\.GOV\.BCB\.PIX|br\.gov\.bcb\.pix)[\s\S]*6304[A-Fa-f0-9]{4}/i;
-          const match = fullText.match(pixRegex);
-          if (match) {
-            foundCode = match[0].replace(/\s+/g, "");
-            break;
+          
+          // Try multiple PIX regex patterns
+          const pixRegexes = [
+            /000201[\s\S]*?(?:BR\.GOV\.BCB\.PIX|br\.gov\.bcb\.pix)[\s\S]*?6304[A-Fa-f0-9]{4}/i,
+            /00020126580014BR\.GOV\.BCB\.PIX[\s\S]*?6304[A-Fa-f0-9]{4}/,
+            /000201[\s\S]*?PIX[\s\S]*?6304[A-Fa-f0-9]{4}/i,
+            /000201[0-9A-Za-z\/+=]*?6304[A-Fa-f0-9]{4}/
+          ];
+          
+          for (const regex of pixRegexes) {
+            const match = fullText.match(regex);
+            if (match) {
+              foundCode = match[0].replace(/\s+/g, "");
+              break;
+            }
           }
-          // Also check by joining with spaces or removing spaces just in case
-          const textNoSpaces = textItems.join("").replace(/\s+/g, "");
-          const matchNoSpaces = textNoSpaces.match(pixRegex);
-          if (matchNoSpaces) {
-            foundCode = matchNoSpaces[0];
+          
+          if (foundCode) break;
+          
+          // Check for hidden PIX code (might be in a non-visible text layer)
+          const hiddenPixPattern = /(?:COPIA|COLA|PIX)?\s*(000201[0-9A-Za-z\/+=]*?6304[A-Fa-f0-9]{4})/i;
+          const hiddenMatch = fullText.match(hiddenPixPattern);
+          if (hiddenMatch && hiddenMatch[1]) {
+            foundCode = hiddenMatch[1];
             break;
           }
         }
 
-        // 2. Fallback to image scanning if not found in text
+        // 2. Try to find QR Code in the PDF by scanning images
         if (!foundCode) {
+          // Check the bottom of the page where PIX QR codes usually are
+          const qrCandidates = [
+            { scale: 3.0, x1: 0.02, y1: 0.80, x2: 0.30, y2: 0.98 }, // Bottom-left area
+            { scale: 3.0, x1: 0.70, y1: 0.80, x2: 0.98, y2: 0.98 }, // Bottom-right area
+            { scale: 2.5, x1: 0.80, y1: 0.84, x2: 0.95, y2: 0.96 }, // Standard PIX area
+            { scale: 2.0, x1: 0, y1: 0, x2: 1, y2: 1 }, // Full page
+          ];
+
           for (let i = 1; i <= Math.min(pdf.numPages, 3); i++) {
-            if (!mounted) break;
+            if (!mounted || foundCode) break;
             const page = await pdf.getPage(i);
             
-            const crops = [
-              { scale: 4.0, x1: 0.04, y1: 0.21, x2: 0.33, y2: 0.43 }, // Inter (with quiet zone)
-              { scale: 4.0, x1: 0.80, y1: 0.84, x2: 0.95, y2: 0.96 }, // DAS (with quiet zone)
-              { scale: 1.5, x1: 0, y1: 0, x2: 1, y2: 1 }, // Fallback full page
-            ];
-            
-            for (const crop of crops) {
+            for (const crop of qrCandidates) {
+              if (foundCode) break;
+              
               const viewport = page.getViewport({ scale: crop.scale });
               const cropX = viewport.width * crop.x1;
               const cropY = viewport.height * crop.y1;
               const cropW = viewport.width * (crop.x2 - crop.x1);
               const cropH = viewport.height * (crop.y2 - crop.y1);
+              
+              // Skip if crop area is too small or invalid
+              if (cropW < 20 || cropH < 20) continue;
               
               const canvas = document.createElement("canvas");
               const context = canvas.getContext("2d", { willReadFrequently: true });
@@ -75,29 +93,71 @@ export function PixScannerButton({ docId, fileUrl }: PixScannerButtonProps) {
               canvas.width = cropW;
               canvas.height = cropH;
               
-              // @ts-ignore
-              await page.render({
-                canvasContext: context,
-                viewport: viewport,
-                transform: [1, 0, 0, 1, -cropX, -cropY]
-              }).promise;
+              try {
+                // @ts-ignore
+                await page.render({
+                  canvasContext: context,
+                  viewport: viewport,
+                  transform: [1, 0, 0, 1, -cropX, -cropY]
+                }).promise;
+              } catch (renderError) {
+                continue;
+              }
               
               const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
-              const code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: "attemptBoth" });
               
-              if (code && code.data.startsWith("000201") && code.data.toLowerCase().includes("br.gov.bcb.pix") && code.data.toLowerCase().includes("5802br") && /6304[A-Fa-f0-9]{4}$/.test(code.data)) {
-                foundCode = code.data;
-                break; // Found it
+              // Try multiple QR decoding attempts
+              for (const inversionAttempt of ["attemptBoth", "dontInvert", "invertFirst", "attemptBoth"] as const) {
+                try {
+                  const code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: inversionAttempt });
+                  
+                  if (code && code.data && code.data.startsWith("000201")) {
+                    // Validate it's a proper PIX code
+                    const validPix = /000201.*(?:BR\.GOV\.BCB\.PIX|br\.gov\.bcb\.pix).*6304[A-Fa-f0-9]{4}/i;
+                    if (validPix.test(code.data)) {
+                      foundCode = code.data;
+                      break;
+                    }
+                  }
+                } catch (qrError) {
+                  continue;
+                }
               }
             }
-            if (foundCode) break;
+          }
+        }
+
+        // 3. Try to extract PIX from raw PDF text if QR fails
+        if (!foundCode) {
+          for (let i = 1; i <= Math.min(pdf.numPages, 3); i++) {
+            if (!mounted) break;
+            const page = await pdf.getPage(i);
+            const textContent = await page.getTextContent();
+            const textItems = textContent.items.map((item: any) => item.str);
+            const fullText = textItems.join("");
+            
+            // Look for PIX in text that might be around the "PIX Copia e Cola" label
+            const pixTextRegex = /PIX\s*Copia\s*e\s*Cola\s*[:.]?\s*([\s\S]*?)(?:\n|$)/i;
+            const match = fullText.match(pixTextRegex);
+            if (match && match[1]) {
+              // Try to find PIX code in the captured text
+              const pixCodeMatch = match[1].match(/000201[0-9A-Za-z\/+=]*?6304[A-Fa-f0-9]{4}/);
+              if (pixCodeMatch) {
+                foundCode = pixCodeMatch[0];
+                break;
+              }
+            }
           }
         }
 
         if (mounted) {
           setScanned(true);
           if (foundCode) {
-            setPixCode(foundCode);
+            // Validate and clean the PIX code
+            const cleanedCode = foundCode.replace(/\s+/g, "").trim();
+            if (cleanedCode.startsWith("000201") && cleanedCode.length > 20) {
+              setPixCode(cleanedCode);
+            }
           }
         }
       } catch (e) {
@@ -121,7 +181,6 @@ export function PixScannerButton({ docId, fileUrl }: PixScannerButtonProps) {
     }
   };
 
-  // hide if scanned and no pix code found, or if scanning isn't done yet hide to avoid flicker of wrong state
   if (!scanned || (scanned && !pixCode)) {
     return null; 
   }
