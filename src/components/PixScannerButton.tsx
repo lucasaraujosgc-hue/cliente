@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Copy, Check, QrCode } from 'lucide-react';
+import { Copy, Check } from 'lucide-react';
 import * as pdfjsLib from 'pdfjs-dist';
 import jsQR from 'jsqr';
 
@@ -12,82 +12,81 @@ interface PixScannerButtonProps {
 
 export function PixScannerButton({ docId, fileUrl }: PixScannerButtonProps) {
   const [pixCode, setPixCode] = useState<string | null>(null);
-  const [isScanning, setIsScanning] = useState(false);
   const [scanned, setScanned] = useState(false);
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
-    // Automatically try to scan in background when component mounts to hide button if no PIX
     let mounted = true;
-    
+
     const preScan = async () => {
       try {
         const loadingTask = pdfjsLib.getDocument({ url: fileUrl });
         const pdf = await loadingTask.promise;
-        let foundCode = null;
+        let foundCode: string | null = null;
 
-        // 1. Try to find the PIX code in the PDF text (Copia e Cola)
+        // 1. Busca texto "copia e cola" nas primeiras páginas
         for (let i = 1; i <= Math.min(pdf.numPages, 3); i++) {
           if (!mounted) break;
           const page = await pdf.getPage(i);
           const textContent = await page.getTextContent();
-          const textItems = textContent.items.map((item: any) => item.str);
-          const fullText = textItems.join("");
-          // Regex to match PIX code: starts with 000201, contains PIX domain, ends with 6304 + 4 hex chars
-          const pixRegex = /000201.*BR\.GOV\.BCB\.PIX.*5802BR.*6304[A-Fa-f0-9]{4}/i;
-          const match = fullText.match(pixRegex);
+
+          // Junta TUDO antes de rodar o regex — evita match parcial
+          const fullText = textContent.items.map((item: any) => item.str).join('');
+
+          // Regex mais amplo: captura qualquer payload que comece com 000201 e termine em 6304 + 4 hex
+          const pixRegex = /000201[A-Za-z0-9./:_\-*%+?=&#@!\s]+6304[A-Fa-f0-9]{4}/;
+          const match = fullText.replace(/\s+/g, '').match(pixRegex);
           if (match) {
             foundCode = match[0];
             break;
           }
-          // Also check by joining with spaces or removing spaces just in case
-          const textNoSpaces = textItems.join("").replace(/\s+/g, "");
-          const matchNoSpaces = textNoSpaces.match(pixRegex);
-          if (matchNoSpaces) {
-            foundCode = matchNoSpaces[0];
-            break;
-          }
         }
 
-        // 2. Fallback to image scanning if not found in text
+        // 2. Fallback: varredura por QR code nas imagens
         if (!foundCode) {
           for (let i = 1; i <= Math.min(pdf.numPages, 3); i++) {
             if (!mounted) break;
             const page = await pdf.getPage(i);
-            
+
             const crops = [
-              { scale: 4.0, x1: 0.06, y1: 0.23, x2: 0.31, y2: 0.41 }, // Inter
-              { scale: 4.0, x1: 0.82, y1: 0.86, x2: 0.93, y2: 0.94 }, // DAS
-              { scale: 1.5, x1: 0, y1: 0, x2: 1, y2: 1 }, // Fallback full page
+              // Inter — QR fica no canto superior esquerdo
+              { scale: 4.0, x1: 0.03, y1: 0.10, x2: 0.24, y2: 0.38 },
+              // DAS / DARF — QR fica no canto inferior direito
+              { scale: 4.0, x1: 0.82, y1: 0.86, x2: 0.93, y2: 0.94 },
+              // Página inteira como último recurso
+              { scale: 1.5, x1: 0, y1: 0, x2: 1, y2: 1 },
             ];
-            
+
             for (const crop of crops) {
               const viewport = page.getViewport({ scale: crop.scale });
               const cropX = viewport.width * crop.x1;
               const cropY = viewport.height * crop.y1;
               const cropW = viewport.width * (crop.x2 - crop.x1);
               const cropH = viewport.height * (crop.y2 - crop.y1);
-              
-              const canvas = document.createElement("canvas");
-              const context = canvas.getContext("2d", { willReadFrequently: true });
+
+              const canvas = document.createElement('canvas');
+              const context = canvas.getContext('2d', { willReadFrequently: true });
               if (!context) continue;
-              
+
               canvas.width = cropW;
               canvas.height = cropH;
-              
+
               // @ts-ignore
               await page.render({
                 canvasContext: context,
-                viewport: viewport,
-                transform: [1, 0, 0, 1, -cropX, -cropY]
+                viewport,
+                transform: [1, 0, 0, 1, -cropX, -cropY],
               }).promise;
-              
+
               const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
               const code = jsQR(imageData.data, imageData.width, imageData.height);
-              
-              if (code && code.data.startsWith("000201") && code.data.toLowerCase().includes("br.gov.bcb.pix") && code.data.toLowerCase().includes("5802br") && /6304[A-Fa-f0-9]{4}$/.test(code.data)) {
+
+              if (
+                code?.data.startsWith('000201') &&
+                /6304[A-Fa-f0-9]{4}$/.test(code.data)
+              ) {
                 foundCode = code.data;
-                break; // Found it
+                break;
               }
             }
             if (foundCode) break;
@@ -96,42 +95,32 @@ export function PixScannerButton({ docId, fileUrl }: PixScannerButtonProps) {
 
         if (mounted) {
           setScanned(true);
-          if (foundCode) {
-            setPixCode(foundCode);
-          }
+          if (foundCode) setPixCode(foundCode);
         }
-      } catch (e) {
+      } catch {
         if (mounted) setScanned(true);
       }
     };
-    
+
     preScan();
     return () => { mounted = false; };
   }, [fileUrl]);
 
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
+  const handleCopyClick = () => {
+    if (!pixCode) return;
+    navigator.clipboard.writeText(pixCode);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleCopyClick = () => {
-    if (pixCode) {
-      copyToClipboard(pixCode);
-    }
-  };
-
-  // hide if scanned and no pix code found, or if scanning isn't done yet hide to avoid flicker of wrong state
-  if (!scanned || (scanned && !pixCode)) {
-    return null; 
-  }
+  if (!scanned || !pixCode) return null;
 
   return (
-    <button 
+    <button
       onClick={handleCopyClick}
       className={`h-10 px-3 border text-xs font-bold rounded-xl transition-all flex items-center justify-center min-w-[100px] ${
-        copied 
-          ? 'bg-emerald-50 border-emerald-200 text-emerald-700 dark:bg-emerald-900/30 dark:border-emerald-800/50 dark:text-emerald-400' 
+        copied
+          ? 'bg-emerald-50 border-emerald-200 text-emerald-700 dark:bg-emerald-900/30 dark:border-emerald-800/50 dark:text-emerald-400'
           : 'bg-indigo-50 dark:bg-indigo-900/30 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 border-indigo-100 dark:border-indigo-800/50 text-indigo-700 dark:text-indigo-300'
       }`}
     >
