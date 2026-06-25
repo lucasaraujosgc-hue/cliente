@@ -19,7 +19,8 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
-  Eye
+  Eye,
+  Send
 } from "lucide-react";
 import { useLocation } from "react-router-dom";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Legend } from "recharts";
