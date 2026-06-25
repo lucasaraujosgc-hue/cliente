@@ -28,7 +28,13 @@ export function ClientOverdue() {
         // Sometimes dueDate is stored as "YYYY-MM-DD", try to parse it
         // Or it could be other format. Assuming ISO or YYYY-MM-DD
         try {
-          const dueDateObj = parseISO(doc.dueDate);
+          let dueDateObj;
+          if (doc.dueDate.includes("/")) {
+            const [day, month, year] = doc.dueDate.split("/").map(Number);
+            dueDateObj = new Date(year, month - 1, day);
+          } else {
+            dueDateObj = parseISO(doc.dueDate);
+          }
           if (isNaN(dueDateObj.getTime())) return false; // invalid date
           
           return isBefore(dueDateObj, today);
@@ -36,7 +42,15 @@ export function ClientOverdue() {
           return false;
         }
       }).sort((a: any, b: any) => {
-        return parseISO(a.dueDate).getTime() - parseISO(b.dueDate).getTime();
+        const parseDate = (d: string) => {
+          if (!d) return 0;
+          if (d.includes("/")) {
+            const [day, month, year] = d.split("/").map(Number);
+            return new Date(year, month - 1, day).getTime();
+          }
+          return parseISO(d).getTime();
+        };
+        return parseDate(a.dueDate) - parseDate(b.dueDate);
       });
       
       setOverdueDocs(overdue);
@@ -124,7 +138,7 @@ export function ClientOverdue() {
                     <div className="flex items-center gap-3 mt-1 text-sm text-slate-500">
                       <span className="flex items-center gap-1 font-medium text-red-600 dark:text-red-400">
                         <Clock className="w-4 h-4" />
-                        Vencido em {format(parseISO(doc.dueDate), "dd/MM/yyyy")}
+                        Vencido em {doc.dueDate.includes("/") ? doc.dueDate : format(parseISO(doc.dueDate), "dd/MM/yyyy")}
                       </span>
                       {doc.competence && (
                         <span>• Ref: {doc.competence}</span>

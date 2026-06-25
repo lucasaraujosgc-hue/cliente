@@ -52,11 +52,17 @@ export function PixScannerButton({ docId, fileUrl }: PixScannerButtonProps) {
             if (start !== -1) {
               const payload = normalized.substring(start);
 
-              const crcMatch = payload.match(/6304[A-Fa-f0-9]{4}/i);
+              // Find the LAST occurrence of 6304 + 4 hex chars
+              const crcRegex = /6304[A-Fa-f0-9]{4}/gi;
+              let lastMatch = null;
+              let match;
+              while ((match = crcRegex.exec(payload)) !== null) {
+                lastMatch = match;
+              }
 
-              if (crcMatch) {
+              if (lastMatch) {
                 const end =
-                  crcMatch.index! + crcMatch[0].length;
+                  lastMatch.index + lastMatch[0].length;
 
                 foundCode = payload.substring(0, end);
 
@@ -69,6 +75,20 @@ export function PixScannerButton({ docId, fileUrl }: PixScannerButtonProps) {
               }
             }
           }
+          
+          if (!foundCode) {
+            const pixRegex = /000201[\s\S]+?(?:BR\.GOV\.BCB\.PIX|br\.gov\.bcb\.pix)[\s\S]+5802BR[\s\S]+6304[A-Fa-f0-9]{4}/i;
+            const fullMatch = pageText.match(pixRegex);
+            if (fullMatch) {
+              foundCode = fullMatch[0].replace(/\s+/g, "");
+              break;
+            }
+            const normalizedMatch = normalized.match(pixRegex);
+            if (normalizedMatch) {
+              foundCode = normalizedMatch[0];
+              break;
+            }
+          }
         }
 
         if (!foundCode) {
@@ -78,9 +98,9 @@ export function PixScannerButton({ docId, fileUrl }: PixScannerButtonProps) {
             const page = await pdf.getPage(i);
 
             const crops = [
-              { scale: 4.0, x1: 0.04, y1: 0.20, x2: 0.33, y2: 0.44 },
-              { scale: 4.0, x1: 0.80, y1: 0.84, x2: 0.95, y2: 0.96 },
-              { scale: 3.0, x1: 0.35, y1: 0.75, x2: 0.65, y2: 0.98 },
+              { scale: 4.0, x1: 0.06, y1: 0.23, x2: 0.31, y2: 0.41 }, // Inter
+              { scale: 4.0, x1: 0.82, y1: 0.86, x2: 0.93, y2: 0.94 }, // DAS
+              { scale: 3.0, x1: 0.35, y1: 0.75, x2: 0.65, y2: 0.98 }, // FGTS
               { scale: 1.5, x1: 0, y1: 0, x2: 1, y2: 1 }
             ];
 
@@ -141,8 +161,12 @@ export function PixScannerButton({ docId, fileUrl }: PixScannerButtonProps) {
                 code &&
                 code.data.startsWith("000201") &&
                 code.data
-                  .toLowerCase()
-                  .includes("br.gov.bcb.pix")
+                  .toUpperCase()
+                  .includes("BR.GOV.BCB.PIX") &&
+                code.data
+                  .toUpperCase()
+                  .includes("5802BR") &&
+                /6304[A-Fa-f0-9]{4}$/i.test(code.data)
               ) {
                 foundCode = code.data;
                 break;

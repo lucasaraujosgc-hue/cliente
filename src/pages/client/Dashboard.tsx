@@ -305,7 +305,7 @@ export function ClientDashboard() {
       return { label: "Sem Vencimento", colorClass: "bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-350", badgeColor: "bg-slate-400", priority: 4 };
     }
 
-    const todayDate = new Date(2026, 5, 22); // June 22, 2026
+    const todayDate = new Date(); // Use actual current date
     const parsedDue = parseDueDateString(doc.dueDate);
 
     if (!parsedDue) {
