@@ -27,15 +27,12 @@ async function renderPage(
 }
 
 /**
- * Validates that a decoded string is a real PIX payload (EMV format).
+ * Validates that a decoded string is a real PIX payload (EMV/BR Code format).
  *
- * Rules:
+ * Rules (mandatory per BACEN spec):
  *  - Starts with 000201 (EMV header)
- *  - Contains br.gov.bcb.pix (identifies as Pix)
- *  - Ends with 6304 + 4 hex chars (mandatory CRC-16 from BACEN)
- *
- * Note: we accept ANY characters between start and end (including spaces)
- * because some payloads like FGTS contain "CAIXA ECONOMICA FEDERAL".
+ *  - Contains br.gov.bcb.pix (Pix identifier, case-insensitive)
+ *  - Ends with 6304 + exactly 4 hex chars (CRC-16)
  */
 function isPixPayload(data: string): boolean {
   return (
@@ -46,61 +43,64 @@ function isPixPayload(data: string): boolean {
 }
 
 /**
- * Try jsQR on the full canvas first, then on quadrant crops.
+ * Try jsQR on the full canvas, then on targeted crop regions.
  *
- * Quadrant order: TL → BR → BL → TR
- *  - TL first: boletos Inter/Sicoob place QR in the top-left corner
- *  - BR second: tax docs (DAS, FGTS) place it in the bottom-right
+ * WHY THE CROP STRATEGY MATTERS:
+ *   jsQR's finder-pattern detector degrades when the QR code occupies
+ *   a small fraction of the total image area. Cropping closer to the QR
+ *   forces the code to fill more of the canvas, dramatically improving
+ *   detection reliability.
  *
- * Full-page scan already catches any position; crops improve effective
- * resolution for small QR codes.
+ * CROP ORDER (chosen by empirical PDF layout analysis):
  *
- * FIX (Inter): Added higher-resolution crops (2/3 of each dimension)
- * to better detect small QR codes embedded in boleto layouts.
+ *   1. Full page       — catches any position at no extra cost
+ *   2. Top-left  35%w × 55%h  — boletos bancários (Inter, Sicoob, Bradesco)
+ *                                QR sits at ~6-31% x, 23-41% y of the page.
+ *                                A half-width crop works for zxing but jsQR
+ *                                needs the QR to fill ≥ ~30% of the crop width.
+ *   3. Bottom-right half       — documentos fiscais (DAS Simples Nacional, DARF)
+ *   4. Bottom-right 35%w×35%h — FGTS Digital / GFD (small QR, bottom-right corner)
+ *   5. Bottom-left half        — fallback
+ *   6. Top-right half          — fallback
  */
 function tryDecodeCanvas(
   ctx: CanvasRenderingContext2D,
   w: number,
   h: number
 ): string | null {
-  // Full page
-  const full = ctx.getImageData(0, 0, w, h);
-  const hit = jsQR(full.data, full.width, full.height);
-  if (hit && isPixPayload(hit.data)) return hit.data;
+  const decode = (sx: number, sy: number, sw: number, sh: number) => {
+    const data = ctx.getImageData(sx, sy, sw, sh);
+    const result = jsQR(data.data, data.width, data.height);
+    return result && isPixPayload(result.data) ? result.data : null;
+  };
 
+  // 1. Full page
+  const full = decode(0, 0, w, h);
+  if (full) return full;
+
+  // 2. Top-left 35% × 55% — Inter / Sicoob boletos
+  //    QR at ~6-31% x, 23-41% y → needs narrow crop so QR fills the frame
+  const tl35 = decode(0, 0, Math.floor(w * 0.35), Math.floor(h * 0.55));
+  if (tl35) return tl35;
+
+  // 3. Bottom-right half — DAS Simples Nacional, DARF
   const hw = Math.floor(w / 2);
   const hh = Math.floor(h / 2);
+  const br = decode(hw, hh, hw, hh);
+  if (br) return br;
 
-  // Standard quadrant crops (half-width, half-height)
-  const quadrants: [number, number, number, number][] = [
-    [0,  0,  hw, hh], // top-left    → boletos (Inter, Sicoob)
-    [hw, hh, hw, hh], // bottom-right → fiscais (DAS, FGTS, DARF)
-    [0,  hh, hw, hh], // bottom-left
-    [hw, 0,  hw, hh], // top-right
-  ];
+  // 4. Bottom-right 35% × 35% — FGTS Digital (very small QR)
+  const brs = decode(
+    Math.floor(w * 0.65), Math.floor(h * 0.65),
+    Math.floor(w * 0.35), Math.floor(h * 0.35)
+  );
+  if (brs) return brs;
 
-  for (const [sx, sy, sw, sh] of quadrants) {
-    const crop = ctx.getImageData(sx, sy, sw, sh);
-    const result = jsQR(crop.data, crop.width, crop.height);
-    if (result && isPixPayload(result.data)) return result.data;
-  }
-
-  // FIX (Inter boleto): larger crops covering 2/3 of each axis —
-  // the Inter QR sits in the upper-left third of the page; standard
-  // half-crops can miss it when the QR is positioned near the edge.
-  const tw = Math.floor(w * 2 / 3);
-  const th = Math.floor(h * 2 / 3);
-
-  const largerRegions: [number, number, number, number][] = [
-    [0,  0,  tw, th], // top-left 2/3
-    [w - tw, h - th, tw, th], // bottom-right 2/3
-  ];
-
-  for (const [sx, sy, sw, sh] of largerRegions) {
-    const crop = ctx.getImageData(sx, sy, sw, sh);
-    const result = jsQR(crop.data, crop.width, crop.height);
-    if (result && isPixPayload(result.data)) return result.data;
-  }
+  // 5-6. Remaining quadrants (fallback)
+  const bl = decode(0, hh, hw, hh);
+  if (bl) return bl;
+  const tr = decode(hw, 0, hw, hh);
+  if (tr) return tr;
 
   return null;
 }
@@ -108,30 +108,30 @@ function tryDecodeCanvas(
 /**
  * Extract PIX payload from the PDF text layer (copia-e-cola).
  *
- * FIX (FGTS): The previous regex used \S+ which stops at whitespace.
- * FGTS payloads contain spaces (e.g. "CAIXA ECONOMICA FEDERAL"),
- * so we now match any character (including spaces) between the
- * 000201 anchor and the 6304XXXX CRC tail.
+ * FIX: The original regex used \S+ which stops at whitespace.
+ * FGTS Digital payloads contain spaces (e.g. "CAIXA ECONOMICA FEDERAL"),
+ * so we now use two strategies:
  *
- * We deliberately allow spaces in the middle but still require
- * the payload to start right at 000201 and end at 6304+4hex.
+ *   1. Strip ALL whitespace first (fastest, handles most PDFs)
+ *   2. Match with spaces allowed, then normalize (handles FGTS Digital)
+ *
+ * The items are joined with a space separator to preserve token boundaries
+ * when the PDF text extractor splits words across items.
  */
 function extractPixFromText(text: string): string | null {
-  // Strategy 1: strip all whitespace and match (catches most cases)
+  // Strategy 1: fully stripped (DAS, DARF, most tax docs)
   const flat = text.replace(/\s+/g, '');
   const m1 = flat.match(/000201.+?6304[A-Fa-f0-9]{4}/);
   if (m1 && isPixPayload(m1[0])) return m1[0];
 
-  // Strategy 2: match with spaces allowed — for FGTS-style payloads
-  // where "CAIXA ECONOMICA FEDERAL" etc. appear in the text layer
-  // without the surrounding whitespace stripped.
+  // Strategy 2: allow spaces inside match (FGTS Digital / GFD)
   const m2 = text.match(/000201[\s\S]+?6304[A-Fa-f0-9]{4}/);
   if (m2) {
-    // Collapse internal whitespace so the final payload is a clean string
-    const candidate = m2[0].replace(/\s+/g, ' ').trim();
-    if (isPixPayload(candidate)) return candidate;
+    // Try collapsed-space version first (preserves "CAIXA ECONOMICA FEDERAL")
+    const spaced = m2[0].replace(/\s+/g, ' ').trim();
+    if (isPixPayload(spaced)) return spaced;
 
-    // Also try fully stripped version of this match
+    // Then fully stripped (some PDFs inject extra newlines mid-payload)
     const stripped = m2[0].replace(/\s+/g, '');
     if (isPixPayload(stripped)) return stripped;
   }
@@ -141,16 +141,19 @@ function extractPixFromText(text: string): string | null {
 
 // ─── scanner ────────────────────────────────────────────────────────────────
 
-// Scales ordered for best QR detection vs. cost:
-// 3 → sharp enough for most codes; 4 → catches small QRs; 2 → fallback
-const SCALES = [9, 8, 7, 6, 5, 3, 4, 2] as const;
+/**
+ * Scale sequence: 3 → good resolution for most QRs; 4 → helps with small
+ * QRs (FGTS); 2 → lower memory fallback.
+ *
+ * Note: jsQR needs the QR to span enough pixels to be detected. Scales 2-4
+ * give 400-900px for a QR that covers ~150pt, which is in the reliable range.
+ */
+const SCALES = [3, 4, 2] as const;
 
 /**
- * Scans only page 1 (virtually all tax PDFs are single-page).
- *
- * Strategy order:
- *  1. QR image scan (3 scales + quadrant crops + 2/3 crops for Inter)
- *  2. Text layer (GFD FGTS Digital, some DARFs) — fixed to allow spaces
+ * Scans page 1 for a PIX payload using two strategies:
+ *  1. QR image scan (multiple scales + focused crop regions)
+ *  2. Text layer fallback (FGTS Digital prints the payload as text)
  */
 async function scanPdfForPix(fileUrl: string): Promise<string | null> {
   const pdf = await pdfjsLib.getDocument({ url: fileUrl }).promise;
@@ -160,13 +163,14 @@ async function scanPdfForPix(fileUrl: string): Promise<string | null> {
   for (const scale of SCALES) {
     const { canvas, ctx } = await renderPage(page, scale);
     const found = tryDecodeCanvas(ctx, canvas.width, canvas.height);
-    canvas.width = 0;
+    canvas.width = 0;  // free GPU memory
     canvas.height = 0;
     if (found) return found;
   }
 
   // ── 2. Text layer fallback ────────────────────────────────────────────────
   const textContent = await page.getTextContent();
+  // Join with space to preserve word boundaries across PDF text items
   const raw = (textContent.items as any[]).map((i) => i.str).join(' ');
   return extractPixFromText(raw);
 }
@@ -182,6 +186,7 @@ export function PixScannerButton({ docId, fileUrl }: PixScannerButtonProps) {
     let alive = true;
     const cacheKey = `pix-${docId}`;
 
+    // Cache hit: skip scanning
     const cached = localStorage.getItem(cacheKey);
     if (cached) {
       setPixCode(cached);
