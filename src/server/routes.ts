@@ -46,6 +46,26 @@ const storage = multer.diskStorage({
   }
 })
 const upload = multer({ storage: storage, limits: { fileSize: 10 * 1024 * 1024 } }); // 10 MB limit
+
+const certStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => {
+    const dest = process.env.DATA_PATH ? path.join(process.env.DATA_PATH, "certs") : path.join(process.cwd(), "data", "certs");
+    if (!fs.existsSync(dest)) {
+      fs.mkdirSync(dest, { recursive: true });
+    }
+    cb(null, dest);
+  },
+  filename: (_req, file, cb) => cb(null, `cert_${Date.now()}_${file.originalname}`),
+});
+const uploadCert = multer({
+  storage: certStorage,
+  fileFilter: (_req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (ext === ".pfx" || ext === ".p12") cb(null, true);
+    else cb(new Error("Apenas arquivos .pfx ou .p12 são aceitos."));
+  },
+  limits: { fileSize: 5 * 1024 * 1024 },
+});
 const JWT_SECRET = process.env.JWT_SECRET || "virgula-secret-key-persistent-across-deploys-12345";
 
 // Email Transporter
@@ -1001,7 +1021,7 @@ export function setupRoutes(app: Express) {
     }
   });
 
-  app.post("/api/pendencies/sitfis/config", verifyAccountantAuth, upload.single("cert"), async (req, res) => {
+  app.post("/api/pendencies/sitfis/config", verifyAccountantAuth, uploadCert.single("cert"), async (req, res) => {
     try {
       const { consumerKey, consumerSecret, certSenha, cnpjContratante, ambiente } = req.body;
       
@@ -1009,8 +1029,7 @@ export function setupRoutes(app: Express) {
         consumerKey,
         consumerSecret,
         cnpjContratante,
-        ambiente,
-        updatedAt: new Date()
+        ambiente
       };
       
       if (certSenha) updateData.certSenha = certSenha;
@@ -1029,7 +1048,8 @@ export function setupRoutes(app: Express) {
 
       res.json({ success: true });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      console.error("ERRO SERPRO POST:", e);
+      res.status(500).json({ error: e.message, stack: e.stack, detail: e.toString() });
     }
   });
 

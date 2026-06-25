@@ -68,8 +68,12 @@ export function Settings() {
       });
 
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || "Falha ao salvar configuração");
+        let errStr = "Falha ao salvar configuração";
+        try {
+          const data = await res.json();
+          errStr = data.error || data.detail || errStr;
+        } catch (err) {}
+        throw new Error(errStr);
       }
       setSuccess("Configurações salvas com sucesso!");
     } catch (e: any) {
