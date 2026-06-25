@@ -8,6 +8,7 @@ import { ThemeProvider } from "next-themes";
 import { ClientLayout, AccountantLayout } from "./components/Layouts";
 import { Login, AccountantLogin } from "./pages/Auth";
 import { ClientDashboard } from "./pages/client/Dashboard";
+import { ClientOverdue } from "./pages/client/Overdue";
 import { ClientVault } from "./pages/client/Vault";
 import { ClientUploads } from "./pages/client/MyUploads";
 import { SetupProfile } from "./pages/client/SetupProfile";
@@ -32,6 +33,7 @@ export default function App() {
           <Route element={<ClientLayout />}>
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
             <Route path="/dashboard" element={<ClientDashboard />} />
+            <Route path="/overdue" element={<ClientOverdue />} />
             <Route path="/vault" element={<ClientVault />} />
             <Route path="/uploads" element={<ClientUploads />} />
           </Route>

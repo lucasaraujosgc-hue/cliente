@@ -10,222 +10,148 @@ interface PixScannerButtonProps {
   fileUrl: string;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Helpers
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Extrai o código PIX de um texto corrido.
- *
- * FIX FGTS: o PDF da CAIXA coloca o código completo numa única linha de texto,
- * mas o pdfjs pode fragmentar os items.  Ao fazer join("") sem separador dois
- * fragmentos consecutivos colam errado; já com join(" ") o regex falha porque
- * o código não tem espaços.  Solução: tentamos AMBAS as versões do texto
- * (sem separador E com separador removido depois) e também buscamos o trecho
- * ANTES de qualquer "Payload Location" / "PIX Copia e Cola" que aparece depois
- * do código no PDF da CAIXA — isso evita que o regex pare cedo por causa da
- * URL curta que vem na sequência.
- */
-function extractPixFromText(rawItems: string[]): string | null {
-  // Versão 1: join sem separador (mais comum para PDFs bem estruturados)
-  const joined = rawItems.join("");
-
-  // Versão 2: join com espaço e depois remove todos os espaços do match
-  // (útil quando os items são fragmentados)
-  const joinedSpace = rawItems.join(" ");
-
-  for (const source of [joined, joinedSpace]) {
-    // Pegamos tudo desde 000201 até o CRC 6304XXXX.
-    // Usamos um greedy no meio para não parar cedo, mas limitamos a 2000 chars
-    // para não capturar lixo demais.
-    const match = source.match(/000201.{20,2000}?6304[A-Fa-f0-9]{4}/);
-    if (match) {
-      // Remove espaços internos que possam ter sido introduzidos pelo join
-      const cleaned = match[0].replace(/\s+/g, "");
-      // Sanity: deve conter a chave pix/bcb ou pelo menos ser longo o suficiente
-      if (cleaned.length >= 50) {
-        return cleaned;
-      }
-    }
-  }
-
-  return null;
-}
-
-/**
- * Tenta decodificar o QR Code de uma região da página do PDF.
- * Retorna o payload se for um PIX válido, ou null.
- */
-async function tryDecodeQRFromRegion(
-  page: any,
-  scale: number,
-  x1: number,
-  y1: number,
-  x2: number,
-  y2: number
-): Promise<string | null> {
-  const viewport = page.getViewport({ scale });
-  const cropX = Math.floor(viewport.width * x1);
-  const cropY = Math.floor(viewport.height * y1);
-  const cropW = Math.ceil(viewport.width * (x2 - x1));
-  const cropH = Math.ceil(viewport.height * (y2 - y1));
-
-  if (cropW < 30 || cropH < 30) return null;
-
-  const canvas = document.createElement("canvas");
-  const context = canvas.getContext("2d", { willReadFrequently: true });
-  if (!context) return null;
-
-  canvas.width = cropW;
-  canvas.height = cropH;
-
-  try {
-    // @ts-ignore
-    await page.render({
-      canvasContext: context,
-      viewport,
-      transform: [1, 0, 0, 1, -cropX, -cropY],
-    }).promise;
-  } catch {
-    return null;
-  }
-
-  const imageData = context.getImageData(0, 0, cropW, cropH);
-
-  for (const inv of ["attemptBoth", "dontInvert", "invertFirst"] as const) {
-    try {
-      const code = jsQR(imageData.data, imageData.width, imageData.height, {
-        inversionAttempts: inv,
-      });
-      if (code?.data && code.data.startsWith("000201")) {
-        // Aceita qualquer PIX (com ou sem o domínio bcb explícito)
-        return code.data;
-      }
-    } catch {
-      // ignora e tenta próxima estratégia
-    }
-  }
-
-  return null;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Regiões de QR Code a escanear
-// Ordem de prioridade: regiões menores/específicas primeiro → página inteira por último.
-//
-// FIX INTER: O boleto do Inter coloca o QR no canto SUPERIOR ESQUERDO
-// (aprox. 2%–28% horizontal, 5%–35% vertical).  Adicionamos essa região
-// como primeira candidata para não depender só das regiões de rodapé.
-// ─────────────────────────────────────────────────────────────────────────────
-const QR_REGIONS = [
-  // ── Canto superior esquerdo (boleto Inter, Sicredi, alguns bancos digitais)
-  { scale: 4.0, x1: 0.01, y1: 0.04, x2: 0.30, y2: 0.38 },
-  { scale: 3.5, x1: 0.01, y1: 0.04, x2: 0.25, y2: 0.32 },
-
-  // ── Canto superior direito
-  { scale: 4.0, x1: 0.70, y1: 0.04, x2: 0.99, y2: 0.38 },
-
-  // ── Rodapé esquerdo (FGTS Digital / CAIXA, GNRe)
-  { scale: 3.5, x1: 0.01, y1: 0.78, x2: 0.32, y2: 0.99 },
-
-  // ── Rodapé direito
-  { scale: 3.5, x1: 0.68, y1: 0.78, x2: 0.99, y2: 0.99 },
-
-  // ── Centro (alguns boletos centralizam o QR)
-  { scale: 3.0, x1: 0.30, y1: 0.30, x2: 0.70, y2: 0.70 },
-
-  // ── Página inteira como último recurso (escala menor para não estourar memória)
-  { scale: 2.0, x1: 0.00, y1: 0.00, x2: 1.00, y2: 1.00 },
-];
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Componente
-// ─────────────────────────────────────────────────────────────────────────────
-
 export function PixScannerButton({ docId, fileUrl }: PixScannerButtonProps) {
   const [pixCode, setPixCode] = useState<string | null>(null);
+  const [isScanning, setIsScanning] = useState(false);
   const [scanned, setScanned] = useState(false);
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
+    // Automatically try to scan in background when component mounts to hide button if no PIX
     let mounted = true;
-
+    
     const preScan = async () => {
       try {
         const loadingTask = pdfjsLib.getDocument({ url: fileUrl });
         const pdf = await loadingTask.promise;
-        let foundCode: string | null = null;
+        let foundCode = null;
 
-        // ── Passo 1: busca no texto extraído pelo pdfjs ──────────────────────
-        for (let i = 1; i <= Math.min(pdf.numPages, 3) && !foundCode; i++) {
+        // 1. Try to find the PIX code in the PDF text (Copia e Cola)
+        for (let i = 1; i <= Math.min(pdf.numPages, 3); i++) {
           if (!mounted) break;
           const page = await pdf.getPage(i);
           const textContent = await page.getTextContent();
-          const items = textContent.items.map((item: any) => item.str as string);
-          foundCode = extractPixFromText(items);
+          
+          // Regex to match PIX code: greedy to get the last 6304. Use [\s\S] to match newlines
+          const pixRegex = /000201[\s\S]+?(?:BR\.GOV\.BCB\.PIX|br\.gov\.bcb\.pix)[\s\S]+6304[A-Fa-f0-9]{4}/i;
+          
+          // O payload completo existe em um único span no text layer
+          for (const item of textContent.items) {
+            const str = (item as any).str;
+            const match = str.match(pixRegex);
+            if (match) {
+              foundCode = match[0].replace(/\s+/g, "");
+              break;
+            }
+          }
+          if (foundCode) break;
+
+          // Fallback: junta tudo com espaços e pega os tokens
+          const fullText = textContent.items.map((item: any) => item.str).join(" ");
+          
+          // Check the full joined text first
+          const fullMatch = fullText.match(pixRegex);
+          if (fullMatch) {
+            foundCode = fullMatch[0].replace(/\s+/g, "");
+            break;
+          }
+
+          const words = fullText.split(/\s+/);
+          for (const word of words) {
+            const match = word.match(pixRegex);
+            if (match) {
+              foundCode = match[0];
+              break;
+            }
+          }
+          if (foundCode) break;
         }
 
-        // ── Passo 2: varredura de regiões para encontrar o QR Code ────────────
+        // 2. Fallback to image scanning if not found in text
         if (!foundCode) {
-          outer: for (let i = 1; i <= Math.min(pdf.numPages, 3); i++) {
+          for (let i = 1; i <= Math.min(pdf.numPages, 3); i++) {
             if (!mounted) break;
             const page = await pdf.getPage(i);
-
-            for (const r of QR_REGIONS) {
-              if (!mounted) break outer;
-              const result = await tryDecodeQRFromRegion(
-                page,
-                r.scale,
-                r.x1,
-                r.y1,
-                r.x2,
-                r.y2
-              );
-              if (result) {
-                foundCode = result;
-                break outer;
+            
+            const crops = [
+              { scale: 4.0, x1: 0.04, y1: 0.20, x2: 0.33, y2: 0.44 }, // Inter slightly larger
+              { scale: 4.0, x1: 0.80, y1: 0.84, x2: 0.95, y2: 0.96 }, // DAS
+              { scale: 3.0, x1: 0.35, y1: 0.75, x2: 0.65, y2: 0.98 }, // FGTS bottom center
+              { scale: 1.5, x1: 0, y1: 0, x2: 1, y2: 1 }, // Fallback full page
+            ];
+            
+            for (const crop of crops) {
+              const viewport = page.getViewport({ scale: crop.scale });
+              const cropX = viewport.width * crop.x1;
+              const cropY = viewport.height * crop.y1;
+              const cropW = viewport.width * (crop.x2 - crop.x1);
+              const cropH = viewport.height * (crop.y2 - crop.y1);
+              
+              const canvas = document.createElement("canvas");
+              const context = canvas.getContext("2d", { willReadFrequently: true });
+              if (!context) continue;
+              
+              canvas.width = cropW;
+              canvas.height = cropH;
+              
+              // @ts-ignore
+              await page.render({
+                canvasContext: context,
+                viewport: viewport,
+                transform: [1, 0, 0, 1, -cropX, -cropY]
+              }).promise;
+              
+              const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+              const code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: "attemptBoth" });
+              
+              if (code && code.data.startsWith("000201") && code.data.toLowerCase().includes("br.gov.bcb.pix") && code.data.toLowerCase().includes("5802br") && /6304[A-Fa-f0-9]{4}$/.test(code.data)) {
+                foundCode = code.data;
+                break; // Found it
               }
             }
+            if (foundCode) break;
           }
         }
 
         if (mounted) {
           setScanned(true);
           if (foundCode) {
-            const clean = foundCode.replace(/\s+/g, "").trim();
-            if (clean.startsWith("000201") && clean.length >= 50) {
-              setPixCode(clean);
-            }
+            setPixCode(foundCode);
           }
         }
-      } catch {
+      } catch (e) {
         if (mounted) setScanned(true);
       }
     };
-
+    
     preScan();
-    return () => {
-      mounted = false;
-    };
+    return () => { mounted = false; };
   }, [fileUrl]);
 
-  const handleCopyClick = () => {
-    if (!pixCode) return;
-    navigator.clipboard.writeText(pixCode);
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
 
-  // Não renderiza nada se ainda está escaneando ou se não encontrou código
-  if (!scanned || !pixCode) return null;
+  const handleCopyClick = () => {
+    if (pixCode) {
+      copyToClipboard(pixCode);
+    }
+  };
+
+  // hide if scanned and no pix code found, or if scanning isn't done yet hide to avoid flicker of wrong state
+  if (!scanned || (scanned && !pixCode)) {
+    return null; 
+  }
 
   return (
-    <button
+    <button 
       onClick={handleCopyClick}
       className={`h-10 px-3 border text-xs font-bold rounded-xl transition-all flex items-center justify-center min-w-[100px] ${
-        copied
-          ? "bg-emerald-50 border-emerald-200 text-emerald-700 dark:bg-emerald-900/30 dark:border-emerald-800/50 dark:text-emerald-400"
-          : "bg-indigo-50 dark:bg-indigo-900/30 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 border-indigo-100 dark:border-indigo-800/50 text-indigo-700 dark:text-indigo-300"
+        copied 
+          ? 'bg-emerald-50 border-emerald-200 text-emerald-700 dark:bg-emerald-900/30 dark:border-emerald-800/50 dark:text-emerald-400' 
+          : 'bg-indigo-50 dark:bg-indigo-900/30 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 border-indigo-100 dark:border-indigo-800/50 text-indigo-700 dark:text-indigo-300'
       }`}
     >
       {copied ? (
