@@ -21,6 +21,7 @@ import {
   ChevronRight,
   Eye
 } from "lucide-react";
+import { useLocation } from "react-router-dom";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Legend } from "recharts";
 import { format, parse, subMonths, isBefore, isAfter, isEqual, parseISO, differenceInDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -29,7 +30,19 @@ import { PixScannerButton } from "../../components/PixScannerButton";
 import { GuiaAtualizarButton } from "../../components/GuiaAtualizarButton";
 
 export function ClientDashboard() {
+  const location = useLocation();
   const [activeDashboardTab, setActiveDashboardTab] = useState<'geral' | 'situacao'>('geral');
+  
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const tab = params.get('tab');
+    if (tab === 'situacao') {
+      setActiveDashboardTab('situacao');
+    } else {
+      setActiveDashboardTab('geral');
+    }
+  }, [location.search]);
+
   const [data, setData] = useState<any>(null);
   const [selectedCompetence, setSelectedCompetence] = useState(format(subMonths(new Date(), 1), "MM/yyyy"));
   const [isUploading, setIsUploading] = useState(false);
@@ -341,7 +354,10 @@ export function ClientDashboard() {
   );
   
   const sitFisDoc = data.documents.find((d: any) => (d.category === 'SITFIS_RECEITA' || d.category === 'sitfis' || d.category?.toUpperCase() === 'SITFIS') && d.extractedData);
-  const hasPendingSitFis = sitFisDoc?.extractedData?.some((d: any) => String(d.status).toUpperCase() === "PENDENTE");
+  const hasPendingSitFis = sitFisDoc?.extractedData?.some((d: any) => {
+    const st = String(d.status).toUpperCase();
+    return st.includes("PEND") || st.includes("IRREGULAR") || (st !== "REGULAR" && st !== "REGULARIZADO");
+  });
 
   // Filter pending ones explicitly
   const pendingDocs = allCurrentDocs.filter((d: any) => d.status !== "paid");
@@ -455,22 +471,6 @@ export function ClientDashboard() {
           </button>
         </div>
       </header>
-
-      <div className="flex gap-2 mt-6 overflow-x-auto pb-2 border-b border-slate-100 dark:border-slate-800">
-        <button
-          onClick={() => setActiveDashboardTab('geral')}
-          className={`px-4 py-2 text-sm font-bold rounded-t-xl transition-colors ${activeDashboardTab === 'geral' ? 'text-indigo-600 dark:text-indigo-400 border-b-2 border-indigo-600 dark:border-indigo-400' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`}
-        >
-          Visão Geral
-        </button>
-        <button
-          onClick={() => setActiveDashboardTab('situacao')}
-          className={`px-4 py-2 text-sm font-bold rounded-t-xl transition-colors ${activeDashboardTab === 'situacao' ? 'text-indigo-600 dark:text-indigo-400 border-b-2 border-indigo-600 dark:border-indigo-400' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'} flex items-center gap-2`}
-        >
-          Situação Fiscal
-          {hasPendingSitFis && <span className="w-2 h-2 rounded-full bg-red-500"></span>}
-        </button>
-      </div>
 
       {activeDashboardTab === 'geral' && (
         <div className="space-y-6 mt-6">
@@ -630,21 +630,20 @@ export function ClientDashboard() {
                           )}
                         </div>
                         {/* INICIO BOTAO GERAR GUIA */}
-                        {(doc.category === "DCTFWEB" || doc.category === "SIMPLES_NACIONAL" || doc.title?.toUpperCase().includes("DCTFWEB") || doc.title?.toUpperCase().includes("SIMPLES")) && (
-                            <div className="mt-3">
-                                <GuiaAtualizarButton 
-                                    clienteId={data.client.id}
-                                    guia={{
-                                        id: doc.id,
-                                        tipoGuia: (doc.category === "DCTFWEB" || doc.title?.toUpperCase().includes("DCTFWEB")) ? "DCTFWEB_INSS" : "DAS_SIMPLES",
-                                        competencia: doc.competencia || selectedCompetence,
-                                        status: doc.status
-                                    }}
-                                    isOverdue={isOverdue}
-                                    onAtualizado={() => loadData()}
-                                />
-                            </div>
-                        )}
+                        <div className="mt-3">
+                            <GuiaAtualizarButton 
+                                clienteId={data.client.id}
+                                guia={{
+                                    id: doc.id,
+                                    tipoGuia: (doc.category === "DCTFWEB" || doc.title?.toUpperCase().includes("DCTFWEB")) ? "DCTFWEB_INSS" : ((doc.category === "SIMPLES_NACIONAL" || doc.title?.toUpperCase().includes("SIMPLES")) ? "DAS_SIMPLES" : "OUTROS"),
+                                    competencia: doc.competencia || selectedCompetence,
+                                    status: doc.status,
+                                    title: doc.title
+                                }}
+                                isOverdue={dueInfo.isOverdue}
+                                onAtualizado={() => loadData()}
+                            />
+                        </div>
                         {/* FIM BOTAO GERAR GUIA */}
                       </div>
                     </div>

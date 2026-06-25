@@ -184,7 +184,10 @@ export function setupRoutes(app: Express) {
       if (dados_extraidos && Array.isArray(dados_extraidos) && dados_extraidos.length > 0) {
          titleStr += ` - ${dados_extraidos[0].orgao}: ${dados_extraidos[0].status}`;
          
-         const hasPending = dados_extraidos.some(d => String(d.status).toUpperCase() === "PENDENTE");
+         const hasPending = dados_extraidos.some((d: any) => {
+           const st = String(d.status).toUpperCase();
+           return st.includes("PEND") || st.includes("IRREGULAR") || (st !== "REGULAR" && st !== "REGULARIZADO");
+         });
          if (hasPending) {
            await db.update(clients).set({ regularityStatus: "red" }).where(eq(clients.id, client.id));
          }
@@ -583,6 +586,24 @@ export function setupRoutes(app: Express) {
       res.json({ success: true });
     } else {
       res.status(404).json({ error: "Doc not found" });
+    }
+  });
+
+  app.post("/api/client/message", verifyClientAuth, async (req, res) => {
+    try {
+      const clientId = (req as any).user.clientId;
+      const { content } = req.body;
+      
+      const [newMsg] = await db.insert(messages).values({
+        clientId,
+        content,
+        direction: "client_to_accountant",
+        read: false
+      }).returning();
+      
+      res.json({ success: true, message: { ...newMsg, createdAt: newMsg.createdAt.toISOString() } });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
     }
   });
 

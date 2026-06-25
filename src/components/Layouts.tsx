@@ -195,38 +195,15 @@ export function ClientLayout() {
   return (
     <div className="flex h-screen w-full bg-[#f8fafc] dark:bg-slate-900 text-slate-800 dark:text-slate-100 font-sans overflow-hidden transition-colors">
       
-      {/* 1. Desktop Sidebar */}
-      {desktopSidebarOpen && (
-        <aside className="hidden md:flex md:w-64 flex-col shrink-0 z-20 shadow-sm">
-          {renderSidebarContent()}
-        </aside>
-      )}
-
-      {/* 2. Mobile Sidebar Slide-out Drawer */}
-      {mobileSidebarOpen && (
-        <div className="fixed inset-0 z-50 md:hidden flex">
-          {/* Backdrop */}
-          <div onClick={() => setMobileSidebarOpen(false)} className="fixed inset-0 bg-slate-950/40 backdrop-blur-xs transition-opacity"></div>
-          {/* Menu Drawer */}
-          <div className="relative flex flex-col w-64 max-w-xs h-full bg-white dark:bg-slate-900 animate-in slide-in-from-left duration-300">
-            {renderSidebarContent()}
-          </div>
-        </div>
-      )}
-
       {/* 3. Main Content Pane */}
       <main className="flex-1 flex flex-col relative overflow-hidden">
         
-        {/* Top bar on all sizes to handle sidebar toggling beautifully */}
+        {/* Top bar */}
         <header className="h-14 flex items-center justify-between px-4 bg-white/50 dark:bg-slate-800/50 backdrop-blur-md border-b border-slate-200/60 dark:border-slate-800/60 w-full z-10 shrink-0">
           <div className="flex items-center space-x-3">
-             {/* Mobile hamburger menu */}
-             <button onClick={() => setMobileSidebarOpen(true)} className="md:hidden p-2 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors" aria-label="Menu principal">
-               <Menu className="w-5 h-5" />
-             </button>
-             {/* Desktop toggle sidebar button */}
-             <button onClick={() => setDesktopSidebarOpen(!desktopSidebarOpen)} className="hidden md:flex p-2 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors" title="Alternar visão lateral">
-               <Menu className="w-5 h-5" />
+             {/* Settings Gear replacing hamburger */}
+             <button onClick={() => setShowPasswordModal(true)} className="p-2 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors" aria-label="Alterar Senha">
+               <Settings className="w-5 h-5" />
              </button>
              <span className="text-sm font-semibold text-slate-500 dark:text-slate-400 truncate max-w-[200px] sm:max-w-none">
                 Empresa: <strong className="text-slate-800 dark:text-white">{user.name}</strong>
@@ -234,12 +211,50 @@ export function ClientLayout() {
           </div>
           <div className="flex items-center space-x-4">
              <ThemeToggle />
+             <button onClick={handleLogout} className="text-slate-500 hover:text-red-500 transition-colors" title="Sair">
+               <LogOut className="w-5 h-5" />
+             </button>
           </div>
         </header>
 
         <div className="absolute inset-0 top-14 bg-gradient-to-br from-virgula-green/5 via-transparent to-transparent -z-10 pointer-events-none"></div>
-        <div className="flex-1 overflow-auto z-0">
-          <div className="max-w-7xl mx-auto p-4 md:p-8 relative">
+        <div className="flex-1 overflow-auto z-0 flex flex-col">
+          <div className="max-w-7xl w-full mx-auto p-4 md:p-8 relative flex-1 flex flex-col">
+            
+            {/* Global Tabs */}
+            <div className="flex gap-2 mb-6 overflow-x-auto pb-2 border-b border-slate-200 dark:border-slate-800 shrink-0">
+              <Link
+                to="/dashboard"
+                className={`px-4 py-2 text-sm font-bold rounded-t-xl transition-colors ${location.pathname === '/dashboard' && !location.search.includes('tab=situacao') ? 'text-indigo-600 dark:text-indigo-400 border-b-2 border-indigo-600 dark:border-indigo-400' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`}
+              >
+                Visão Geral
+              </Link>
+              <Link
+                to="/dashboard?tab=situacao"
+                className={`px-4 py-2 text-sm font-bold rounded-t-xl transition-colors ${location.pathname === '/dashboard' && location.search.includes('tab=situacao') ? 'text-indigo-600 dark:text-indigo-400 border-b-2 border-indigo-600 dark:border-indigo-400' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`}
+              >
+                Situação Fiscal
+              </Link>
+              <Link
+                to="/overdue"
+                className={`px-4 py-2 text-sm font-bold rounded-t-xl transition-colors ${location.pathname === '/overdue' ? 'text-indigo-600 dark:text-indigo-400 border-b-2 border-indigo-600 dark:border-indigo-400' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`}
+              >
+                Atrasados
+              </Link>
+              <Link
+                to="/vault"
+                className={`px-4 py-2 text-sm font-bold rounded-t-xl transition-colors ${location.pathname === '/vault' ? 'text-indigo-600 dark:text-indigo-400 border-b-2 border-indigo-600 dark:border-indigo-400' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`}
+              >
+                Cofre Digital
+              </Link>
+              <Link
+                to="/uploads"
+                className={`px-4 py-2 text-sm font-bold rounded-t-xl transition-colors ${location.pathname === '/uploads' ? 'text-indigo-600 dark:text-indigo-400 border-b-2 border-indigo-600 dark:border-indigo-400' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`}
+              >
+                Meus Envios
+              </Link>
+            </div>
+
             <Outlet />
           </div>
         </div>
