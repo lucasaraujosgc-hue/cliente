@@ -3,6 +3,7 @@ import { format, isBefore, parseISO, startOfDay } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { AlertCircle, FileText, Download, CheckCircle, Clock } from "lucide-react";
 import { PixScannerButton } from "../../components/PixScannerButton";
+import { GuiaAtualizarButton } from "../../components/GuiaAtualizarButton";
 
 export function ClientOverdue() {
   const [loading, setLoading] = useState(true);
@@ -185,6 +186,24 @@ export function ClientOverdue() {
                     </div>
                   )}
                 </div>
+                
+                {/* INICIO BOTAO GERAR GUIA */}
+                {(doc.category === "DCTFWEB" || doc.category === "SIMPLES_NACIONAL" || doc.title?.toUpperCase().includes("DCTFWEB") || doc.title?.toUpperCase().includes("SIMPLES")) && (
+                    <div className="mt-3 md:ml-12">
+                        <GuiaAtualizarButton 
+                            clienteId={doc.clientId}
+                            guia={{
+                                id: doc.id,
+                                tipoGuia: (doc.category === "DCTFWEB" || doc.title?.toUpperCase().includes("DCTFWEB")) ? "DCTFWEB_INSS" : "DAS_SIMPLES",
+                                competencia: doc.competencia || "00/0000",
+                                status: doc.status
+                            }}
+                            isOverdue={true}
+                            onAtualizado={() => loadData()}
+                        />
+                    </div>
+                )}
+                {/* FIM BOTAO GERAR GUIA */}
               </div>
             </div>
           ))}

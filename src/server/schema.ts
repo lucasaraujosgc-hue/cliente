@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, boolean, integer, uuid, json } from 'drizzle-orm/pg-core';
+import { pgTable, text, timestamp, boolean, integer, uuid, json, serial, real } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 
 export const clients = pgTable('clients', {
@@ -71,6 +71,22 @@ export const documentsRelations = relations(documents, ({ one }) => ({
 		references: [clients.id],
 	}),
 }));
+
+export const guiasGeradas = pgTable('guias_geradas', {
+  id: serial('id').primaryKey(),
+  clientId: uuid('client_id').notNull().references(() => clients.id),
+  usuarioId: integer('usuario_id').notNull().default(1),
+  tipoGuia: text('tipo_guia').notNull(),
+  competencia: text('competencia').notNull(),
+  status: text('status').default('PENDENTE'),
+  pdfPath: text('pdf_path'),
+  dataVencimento: text('data_vencimento'),
+  valorTotal: real('valor_total'),
+  numeroDocumento: text('numero_documento'),
+  erroMsg: text('erro_msg'),
+  createdAt: timestamp('created_at').defaultNow(),
+  concluidoAt: timestamp('concluido_at')
+});
 
 export const billingDataRelations = relations(billingData, ({ one }) => ({
 	client: one(clients, {

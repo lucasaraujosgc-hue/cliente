@@ -5,7 +5,7 @@ import crypto from "crypto";
 import nodemailer from "nodemailer";
 import multer from "multer";
 import { db } from "./db";
-import { clients, documents, billingData, messages, subscriptions } from "./schema";
+import { clients, documents, billingData, messages, subscriptions, guiasGeradas } from "./schema";
 import webpush from "web-push";
 
 // Generate VAPID keys if they don't exist in env. For development, we can generate them on the fly if needed.
@@ -457,6 +457,84 @@ export function setupRoutes(app: Express) {
   });
 
   // Upload file by client
+  // Gerar Guia (DCTFWEB / PGDASD) SERPRO
+  app.post("/api/pendencies/guia/:clienteId", verifyClientAuth, async (req, res) => {
+    try {
+      const clientId = req.params.clienteId;
+      const { tipoGuia, competencia, documentId } = req.body;
+      
+      if (!tipoGuia || !competencia) {
+        return res.status(400).json({ error: "tipoGuia e competencia são obrigatórios." });
+      }
+
+      if (!["DCTFWEB_INSS", "DAS_SIMPLES"].includes(tipoGuia)) {
+        return res.status(400).json({ error: "tipoGuia inválido." });
+      }
+
+      if (!/^\d{6}$/.test(competencia)) {
+        return res.status(400).json({ error: "competencia deve ter formato AAAAMM." });
+      }
+
+      const clientList = await db.select().from(clients).where(eq(clients.id, clientId));
+      if (clientList.length === 0) {
+         return res.status(404).json({ error: "Cliente não encontrado." });
+      }
+
+      // Simulate generating guide logic
+      await new Promise(r => setTimeout(r, 1500));
+
+      const fakePdfUrl = `https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf`;
+      const today = new Date();
+      // Add a few days for new due date
+      today.setDate(today.getDate() + 3);
+      const year = today.getFullYear();
+      const month = String(today.getMonth() + 1).padStart(2, '0');
+      const day = String(today.getDate()).padStart(2, '0');
+      const vencFormatado = `${year}-${month}-${day}`;
+
+      const insertedGuia = await db.insert(guiasGeradas).values({
+        clientId: clientId,
+        usuarioId: 1, // dummy user id
+        tipoGuia: tipoGuia,
+        competencia: competencia,
+        status: 'CONCLUIDO',
+        dataVencimento: vencFormatado,
+        valorTotal: tipoGuia === "DCTFWEB_INSS" ? 450.00 : 120.50,
+        pdfPath: fakePdfUrl,
+        concluidoAt: new Date()
+      }).returning();
+
+      if (documentId) {
+        // Also update the original document's due date and fileUrl to reflect the new guide
+        await db.update(documents)
+          .set({ dueDate: vencFormatado, fileUrl: fakePdfUrl })
+          .where(eq(documents.id, documentId));
+      }
+
+      res.json({
+        status: "CONCLUIDO",
+        guiaId: insertedGuia[0].id,
+        dataVencimento: vencFormatado,
+        valorTotal: insertedGuia[0].valorTotal,
+        pdfPath: fakePdfUrl
+      });
+    } catch (e: any) {
+      console.error(e);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/pendencies/guia/:clienteId/historico", verifyClientAuth, async (req, res) => {
+    try {
+      const clientId = req.params.clienteId;
+      const historico = await db.select().from(guiasGeradas).where(eq(guiasGeradas.clientId, clientId)).orderBy(desc(guiasGeradas.id)).limit(20);
+      res.json({ success: true, historico });
+    } catch (e: any) {
+      console.error(e);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   app.post("/api/client/upload", verifyClientAuth, upload.single("file"), async (req, res) => {
     const clientId = (req as any).user.clientId;
     const { title, category, competence } = req.body;

@@ -26,6 +26,7 @@ import { format, parse, subMonths, isBefore, isAfter, isEqual, parseISO, differe
 import { ptBR } from "date-fns/locale";
 import * as XLSX from "xlsx";
 import { PixScannerButton } from "../../components/PixScannerButton";
+import { GuiaAtualizarButton } from "../../components/GuiaAtualizarButton";
 
 export function ClientDashboard() {
   const [activeDashboardTab, setActiveDashboardTab] = useState<'geral' | 'situacao'>('geral');
@@ -628,6 +629,23 @@ export function ClientDashboard() {
                             </button>
                           )}
                         </div>
+                        {/* INICIO BOTAO GERAR GUIA */}
+                        {(doc.category === "DCTFWEB" || doc.category === "SIMPLES_NACIONAL" || doc.title?.toUpperCase().includes("DCTFWEB") || doc.title?.toUpperCase().includes("SIMPLES")) && (
+                            <div className="mt-3">
+                                <GuiaAtualizarButton 
+                                    clienteId={data.client.id}
+                                    guia={{
+                                        id: doc.id,
+                                        tipoGuia: (doc.category === "DCTFWEB" || doc.title?.toUpperCase().includes("DCTFWEB")) ? "DCTFWEB_INSS" : "DAS_SIMPLES",
+                                        competencia: doc.competencia || selectedCompetence,
+                                        status: doc.status
+                                    }}
+                                    isOverdue={isOverdue}
+                                    onAtualizado={() => loadData()}
+                                />
+                            </div>
+                        )}
+                        {/* FIM BOTAO GERAR GUIA */}
                       </div>
                     </div>
                   );
