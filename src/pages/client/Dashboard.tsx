@@ -475,7 +475,7 @@ export function ClientDashboard() {
       {activeDashboardTab === 'geral' && (
         <div className="space-y-6 mt-6">
           {/* SATELLITE COMMUNICATIONS FROM ACCOUNTANT */}
-          {data.messages && data.messages.filter((m: any) => !m.read).map((msg: any) => (
+          {data.messages && data.messages.filter((m: any) => !m.read && m.direction !== 'client_to_accountant').map((msg: any) => (
             <div key={msg.id} className="bg-indigo-50/70 dark:bg-slate-800/40 backdrop-blur-md border border-indigo-100/40 dark:border-slate-700/60 rounded-3xl p-4 flex items-start shadow-xs">
               <Bell className="text-indigo-500 dark:text-indigo-400 w-5 h-5 mt-0.5 mr-3 shrink-0" />
               <div>
@@ -570,8 +570,16 @@ export function ClientDashboard() {
                           </div>
                         </div>
 
-                        {/* Interactive tactile buttons */}
-                        <div className="flex flex-wrap items-center gap-2 self-end sm:self-center">
+                        {doc.status === "waiting_accountant" ? (
+                           <div className="flex items-center p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl mt-3 sm:mt-0 sm:self-center w-full sm:w-auto">
+                               <span className="text-xs font-bold text-blue-700 dark:text-blue-400 flex items-center gap-1">
+                                   <Send className="w-3.5 h-3.5" /> Aguardando contador enviar a guia.
+                               </span>
+                           </div>
+                        ) : (
+                          <div className="flex flex-col gap-2 self-end sm:self-center">
+                            {/* Interactive tactile buttons */}
+                            <div className="flex flex-wrap items-center gap-2">
                           {doc.fileUrl && (
                             <>
                             <a 
@@ -645,6 +653,8 @@ export function ClientDashboard() {
                             />
                         </div>
                         {/* FIM BOTAO GERAR GUIA */}
+                        </div>
+                      )}
                       </div>
                     </div>
                   );

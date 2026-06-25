@@ -47,6 +47,7 @@ export const messages = pgTable('messages', {
   id: uuid('id').primaryKey().defaultRandom(),
   clientId: uuid('client_id').notNull().references(() => clients.id),
   content: text('content').notNull(),
+  direction: text('direction').default('accountant_to_client').notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   read: boolean('read').default(false).notNull(),
 });

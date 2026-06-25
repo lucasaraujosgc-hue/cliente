@@ -508,12 +508,12 @@ export function setupRoutes(app: Express) {
 
       const fakePdfUrl = `https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf`;
       const today = new Date();
-      // Add a few days for new due date
-      today.setDate(today.getDate() + 3);
+      // "o vencimento é no dia que foi recalculado"
       const year = today.getFullYear();
       const month = String(today.getMonth() + 1).padStart(2, '0');
       const day = String(today.getDate()).padStart(2, '0');
       const vencFormatado = `${year}-${month}-${day}`;
+      const fakePixCode = "00020126580014br.gov.bcb.pix0136" + Math.random().toString(36).substring(2, 15) + "5204000053039865802BR5913Receita Federal6008Brasilia62070503***6304" + Math.floor(1000 + Math.random() * 9000);
 
       const insertedGuia = await db.insert(guiasGeradas).values({
         clientId: clientId,
@@ -530,7 +530,7 @@ export function setupRoutes(app: Express) {
       if (documentId) {
         // Also update the original document's due date and fileUrl to reflect the new guide
         await db.update(documents)
-          .set({ dueDate: vencFormatado, fileUrl: fakePdfUrl })
+          .set({ dueDate: vencFormatado, fileUrl: fakePdfUrl, pixCode: fakePixCode })
           .where(eq(documents.id, documentId));
       }
 
@@ -539,7 +539,8 @@ export function setupRoutes(app: Express) {
         guiaId: insertedGuia[0].id,
         dataVencimento: vencFormatado,
         valorTotal: insertedGuia[0].valorTotal,
-        pdfPath: fakePdfUrl
+        pdfPath: fakePdfUrl,
+        pixCode: fakePixCode
       });
     } catch (e: any) {
       console.error(e);

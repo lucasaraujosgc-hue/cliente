@@ -242,18 +242,26 @@ export function ClientDetail() {
            
            <div className="flex-1 overflow-auto p-6 space-y-4 max-h-[300px]">
               {data.messages.length === 0 && <p className="text-sm text-slate-400 text-center py-4">Nenhum recado enviado.</p>}
-              {data.messages.map((m:any) => (
-                 <div key={m.id} className="bg-blue-50/80 backdrop-blur-md border border-blue-100/50 text-blue-900 p-4 rounded-2xl text-sm shadow-sm shadow-blue-50 relative group">
+              {data.messages.map((m:any) => {
+                 const isFromClient = m.direction === 'client_to_accountant';
+                 return (
+                 <div key={m.id} className={`backdrop-blur-md border p-4 rounded-2xl text-sm shadow-sm relative group ${isFromClient ? 'bg-amber-50/80 border-amber-100/50 text-amber-900 shadow-amber-50' : 'bg-blue-50/80 border-blue-100/50 text-blue-900 shadow-blue-50'}`}>
+                    <div className="flex items-center gap-2 mb-1">
+                       <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isFromClient ? 'bg-amber-200 text-amber-800' : 'bg-blue-200 text-blue-800'}`}>
+                          {isFromClient ? 'DO CLIENTE' : 'SEU RECADO'}
+                       </span>
+                    </div>
                     <p className="font-medium">{m.content}</p>
                     <div className="flex justify-between items-end">
-                       <span className="text-[10px] uppercase font-bold text-blue-400/80 mt-2 block">{format(parseISO(m.createdAt), "dd MMM HH:mm", {locale: ptBR})}</span>
+                       <span className={`text-[10px] uppercase font-bold mt-2 block ${isFromClient ? 'text-amber-500/80' : 'text-blue-400/80'}`}>{format(parseISO(m.createdAt), "dd MMM HH:mm", {locale: ptBR})}</span>
                        <div className="hidden group-hover:flex gap-2">
                           <button type="button" onClick={() => deleteMessage(m.id)} title="Excluir"><Trash2 className="w-4 h-4 text-red-500 hover:text-red-700"/></button>
-                          <button type="button" onClick={() => setEditingMsg(m)} title="Editar"><Edit3 className="w-4 h-4 text-blue-500 hover:text-blue-700"/></button>
+                          {!isFromClient && <button type="button" onClick={() => setEditingMsg(m)} title="Editar"><Edit3 className="w-4 h-4 text-blue-500 hover:text-blue-700"/></button>}
                        </div>
                     </div>
                  </div>
-              ))}
+                 );
+              })}
            </div>
 
            <form onSubmit={handleSendMessage} className="p-4 border-t border-white bg-white/60 flex flex-col gap-2 relative">

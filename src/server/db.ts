@@ -65,6 +65,7 @@ export async function initDb() {
     await client.query(`ALTER TABLE "documents" ADD COLUMN IF NOT EXISTS "competence" text;`);
     await client.query(`ALTER TABLE "documents" ADD COLUMN IF NOT EXISTS "pix_code" text;`);
     await client.query(`ALTER TABLE "documents" ADD COLUMN IF NOT EXISTS "extracted_data" jsonb;`);
+    await client.query(`ALTER TABLE "messages" ADD COLUMN IF NOT EXISTS "direction" text DEFAULT 'accountant_to_client' NOT NULL;`);
 
     await client.query(`
       CREATE TABLE IF NOT EXISTS "subscriptions" (
