@@ -281,13 +281,17 @@ export function ClientDashboard() {
     );
   }
 
-  // Parse Brazilian Date String (DD/MM/YYYY) to standard Date object
+  // Parse Brazilian Date String (DD/MM/YYYY) or ISO (YYYY-MM-DD) to standard Date object
   const parseDueDateString = (dateStr: string) => {
     if (!dateStr) return null;
     try {
       if (dateStr.includes("/")) {
         const [day, month, year] = dateStr.split("/").map(Number);
         return new Date(year, month - 1, day);
+      } else if (dateStr.includes("-")) {
+        // YYYY-MM-DD format (to avoid UTC shift)
+        const parts = dateStr.split("T")[0].split("-");
+        return new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
       }
       return new Date(dateStr);
     } catch (e) {
@@ -320,19 +324,22 @@ export function ClientDashboard() {
 
     if (diffDays < 0) {
       return { label: `Atrasado [${Math.abs(diffDays)}d] 🔴`, colorClass: "bg-rose-100 text-rose-800 border-rose-300 dark:bg-rose-950/30 dark:text-rose-400 dark:border-rose-800/50 blink shadow-sm", badgeColor: "bg-rose-500", priority: 0, isOverdue: true };
+    } else if (diffDays === 0) {
+      return { label: `Vence hoje ⚠️`, colorClass: "bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950/20 dark:text-amber-400 dark:border-amber-700/50 animate-pulse", badgeColor: "bg-amber-500", priority: 1, isSoon: true };
     } else if (diffDays <= 4) {
       return { label: `Vence em breve [${diffDays}d] ⚠️`, colorClass: "bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950/20 dark:text-amber-400 dark:border-amber-700/50 animate-pulse", badgeColor: "bg-amber-500", priority: 1, isSoon: true };
     } else {
-      return { label: `Vence em ${doc.dueDate}`, colorClass: "bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400", badgeColor: "bg-blue-500", priority: 2 };
+      const formattedDue = doc.dueDate?.includes("-") ? `${doc.dueDate.split("T")[0].split("-")[2]}/${doc.dueDate.split("T")[0].split("-")[1]}/${doc.dueDate.split("T")[0].split("-")[0]}` : doc.dueDate;
+      return { label: `Vence em ${formattedDue}`, colorClass: "bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400", badgeColor: "bg-blue-500", priority: 2 };
     }
   };
 
   // Find all documents for the selected competence or with important upcoming maturities
   const allCurrentDocs = data.documents.filter((d: any) => 
-    d.competence === selectedCompetence && d.category !== "bank_statement"
+    d.competence === selectedCompetence && d.category !== "bank_statement" && d.category !== "SITFIS_RECEITA" && d.category?.toLowerCase() !== "sitfis"
   );
   
-  const sitFisDoc = data.documents.find((d: any) => d.category === 'SITFIS_RECEITA' && d.extractedData);
+  const sitFisDoc = data.documents.find((d: any) => (d.category === 'SITFIS_RECEITA' || d.category === 'sitfis' || d.category?.toUpperCase() === 'SITFIS') && d.extractedData);
   const hasPendingSitFis = sitFisDoc?.extractedData?.some((d: any) => String(d.status).toUpperCase() === "PENDENTE");
 
   // Filter pending ones explicitly
@@ -554,7 +561,7 @@ export function ClientDashboard() {
 
                             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-[11px] text-slate-500 dark:text-slate-400">
                               <span className="flex items-center gap-1">
-                                <Calendar className="w-3 h-3 text-slate-400" /> Vencimento: <strong className="text-slate-700 dark:text-slate-300 font-extrabold">{doc.dueDate || "N/D"}</strong>
+                                <Calendar className="w-3 h-3 text-slate-400" /> Vencimento: <strong className="text-slate-700 dark:text-slate-300 font-extrabold">{doc.dueDate ? (doc.dueDate.includes("-") ? `${doc.dueDate.split("T")[0].split("-")[2]}/${doc.dueDate.split("T")[0].split("-")[1]}/${doc.dueDate.split("T")[0].split("-")[0]}` : doc.dueDate) : "N/D"}</strong>
                               </span>
                               <span>•</span>
                               <span className="font-medium">Arquivo: {doc.title || "Documento"}</span>

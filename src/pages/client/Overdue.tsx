@@ -32,12 +32,15 @@ export function ClientOverdue() {
           if (doc.dueDate.includes("/")) {
             const [day, month, year] = doc.dueDate.split("/").map(Number);
             dueDateObj = new Date(year, month - 1, day);
+          } else if (doc.dueDate.includes("-")) {
+            const parts = doc.dueDate.split("T")[0].split("-");
+            dueDateObj = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
           } else {
             dueDateObj = parseISO(doc.dueDate);
           }
           if (isNaN(dueDateObj.getTime())) return false; // invalid date
           
-          return isBefore(dueDateObj, today);
+          return isBefore(startOfDay(dueDateObj), startOfDay(today));
         } catch (e) {
           return false;
         }
@@ -47,6 +50,9 @@ export function ClientOverdue() {
           if (d.includes("/")) {
             const [day, month, year] = d.split("/").map(Number);
             return new Date(year, month - 1, day).getTime();
+          } else if (d.includes("-")) {
+            const parts = d.split("T")[0].split("-");
+            return new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2])).getTime();
           }
           return parseISO(d).getTime();
         };
@@ -138,7 +144,11 @@ export function ClientOverdue() {
                     <div className="flex items-center gap-3 mt-1 text-sm text-slate-500">
                       <span className="flex items-center gap-1 font-medium text-red-600 dark:text-red-400">
                         <Clock className="w-4 h-4" />
-                        Vencido em {doc.dueDate.includes("/") ? doc.dueDate : format(parseISO(doc.dueDate), "dd/MM/yyyy")}
+                        Vencido em {
+                          doc.dueDate.includes("/") ? doc.dueDate : 
+                          doc.dueDate.includes("-") ? `${doc.dueDate.split("T")[0].split("-")[2]}/${doc.dueDate.split("T")[0].split("-")[1]}/${doc.dueDate.split("T")[0].split("-")[0]}` : 
+                          format(parseISO(doc.dueDate), "dd/MM/yyyy")
+                        }
                       </span>
                       {doc.competence && (
                         <span>• Ref: {doc.competence}</span>
