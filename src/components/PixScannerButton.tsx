@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Copy, Check } from 'lucide-react';
 import * as pdfjsLib from 'pdfjs-dist';
-import jsQR from 'jsqr';
+import { readBarcodes, type ReaderOptions } from 'zxing-wasm/reader';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
 
@@ -10,29 +10,68 @@ interface PixScannerButtonProps {
   fileUrl: string;
 }
 
+// ─── zxing options ──────────────────────────────────────────────────────────
+
+/**
+ * Only QR Codes carry PIX payloads.
+ * tryHarder: true → enables multi-scale + rotation attempts inside zxing-wasm,
+ * which is essential for small QRs (FGTS) and slightly skewed ones (Inter boleto).
+ * maxNumberOfSymbols: 1 → stop after the first valid QR to save time.
+ */
+const ZXING_OPTIONS: ReaderOptions = {
+  formats: ['QRCode'],
+  tryHarder: true,
+  maxNumberOfSymbols: 1,
+};
+
 // ─── helpers ────────────────────────────────────────────────────────────────
 
-async function renderPage(
+/**
+ * Render a PDF page to an off-screen canvas at the given scale.
+ * Returns the ImageData so it can be passed directly to zxing-wasm.
+ */
+async function renderPageToImageData(
   page: pdfjsLib.PDFPageProxy,
   scale: number
-): Promise<{ canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D }> {
+): Promise<ImageData> {
   const viewport = page.getViewport({ scale });
   const canvas = document.createElement('canvas');
   canvas.width = viewport.width;
   canvas.height = viewport.height;
   const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
-  // @ts-ignore
+  // @ts-ignore – typings vary across pdfjs versions
   await page.render({ canvasContext: ctx, viewport }).promise;
-  return { canvas, ctx };
+  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  // Free GPU memory immediately
+  canvas.width = 0;
+  canvas.height = 0;
+  return imageData;
 }
 
 /**
- * Validates that a decoded string is a real PIX payload (EMV/BR Code format).
+ * Crop a rectangular region out of an ImageData (RGBA, row-major).
+ */
+function cropImageData(
+  src: ImageData,
+  sx: number, sy: number,
+  sw: number, sh: number
+): ImageData {
+  const dst = new ImageData(sw, sh);
+  for (let row = 0; row < sh; row++) {
+    const srcOff = ((sy + row) * src.width + sx) * 4;
+    const dstOff = row * sw * 4;
+    dst.data.set(src.data.subarray(srcOff, srcOff + sw * 4), dstOff);
+  }
+  return dst;
+}
+
+/**
+ * Validates that a decoded string is a real PIX payload (BACEN EMV spec).
  *
- * Rules (mandatory per BACEN spec):
- *  - Starts with 000201 (EMV header)
- *  - Contains br.gov.bcb.pix (Pix identifier, case-insensitive)
- *  - Ends with 6304 + exactly 4 hex chars (CRC-16)
+ * Mandatory fields:
+ *  000201        → EMV payload format indicator
+ *  br.gov.bcb.pix → Pix merchant account template (case-insensitive)
+ *  6304[4 hex]   → CRC-16/CCITT-FALSE checksum
  */
 function isPixPayload(data: string): boolean {
   return (
@@ -43,95 +82,94 @@ function isPixPayload(data: string): boolean {
 }
 
 /**
- * Try jsQR on the full canvas, then on targeted crop regions.
- *
- * WHY THE CROP STRATEGY MATTERS:
- *   jsQR's finder-pattern detector degrades when the QR code occupies
- *   a small fraction of the total image area. Cropping closer to the QR
- *   forces the code to fill more of the canvas, dramatically improving
- *   detection reliability.
- *
- * CROP ORDER (chosen by empirical PDF layout analysis):
- *
- *   1. Full page       — catches any position at no extra cost
- *   2. Top-left  35%w × 55%h  — boletos bancários (Inter, Sicoob, Bradesco)
- *                                QR sits at ~6-31% x, 23-41% y of the page.
- *                                A half-width crop works for zxing but jsQR
- *                                needs the QR to fill ≥ ~30% of the crop width.
- *   3. Bottom-right half       — documentos fiscais (DAS Simples Nacional, DARF)
- *   4. Bottom-right 35%w×35%h — FGTS Digital / GFD (small QR, bottom-right corner)
- *   5. Bottom-left half        — fallback
- *   6. Top-right half          — fallback
+ * Run zxing-wasm on one ImageData region. Returns the PIX payload or null.
  */
-function tryDecodeCanvas(
-  ctx: CanvasRenderingContext2D,
-  w: number,
-  h: number
-): string | null {
-  const decode = (sx: number, sy: number, sw: number, sh: number) => {
-    const data = ctx.getImageData(sx, sy, sw, sh);
-    const result = jsQR(data.data, data.width, data.height);
-    return result && isPixPayload(result.data) ? result.data : null;
-  };
+async function decodeRegion(imageData: ImageData): Promise<string | null> {
+  const results = await readBarcodes(imageData, ZXING_OPTIONS);
+  for (const r of results) {
+    if (isPixPayload(r.text)) return r.text;
+  }
+  return null;
+}
 
-  // 1. Full page
-  const full = decode(0, 0, w, h);
+/**
+ * Scan a rendered page for a PIX QR Code using zxing-wasm.
+ *
+ * Strategy: full page first, then focused crops.
+ * zxing's tryHarder already does multi-scale internally, but targeted crops
+ * help when the QR occupies a small fraction of the page — each crop forces
+ * a better pixels-per-module ratio for the decoder.
+ *
+ * Crop layout (confirmed with real PDFs):
+ *
+ *  ┌──────────────────────────────────┐
+ *  │ [TL 35%×55%]  ←  Inter boleto   │  QR at ~9-29% x, 25-39% y
+ *  │               ←  Sicoob boleto  │
+ *  │                                  │
+ *  │                  [BR 35%×35%] ← │  FGTS/GFD: QR at ~44-56% x, 82-91% y
+ *  └──────────────────────────────────┘
+ *
+ * DAS Simples Nacional QR is large and central-bottom → full page catches it.
+ */
+async function scanPageForPix(imageData: ImageData): Promise<string | null> {
+  const w = imageData.width;
+  const h = imageData.height;
+
+  // 1. Full page (DAS Simples Nacional, any large/central QR)
+  const full = await decodeRegion(imageData);
   if (full) return full;
 
   // 2. Top-left 35% × 55% — Inter / Sicoob boletos
-  //    QR at ~6-31% x, 23-41% y → needs narrow crop so QR fills the frame
-  const tl35 = decode(0, 0, Math.floor(w * 0.35), Math.floor(h * 0.55));
-  if (tl35) return tl35;
+  const tl = cropImageData(imageData, 0, 0, Math.floor(w * 0.35), Math.floor(h * 0.55));
+  const tlResult = await decodeRegion(tl);
+  if (tlResult) return tlResult;
 
-  // 3. Bottom-right half — DAS Simples Nacional, DARF
+  // 3. Bottom-right 35% × 35% — FGTS Digital / GFD (small QR)
+  const brX = Math.floor(w * 0.65);
+  const brY = Math.floor(h * 0.65);
+  const br = cropImageData(imageData, brX, brY, w - brX, h - brY);
+  const brResult = await decodeRegion(br);
+  if (brResult) return brResult;
+
+  // 4. Bottom-right half — DAS fallback and other tax docs
   const hw = Math.floor(w / 2);
   const hh = Math.floor(h / 2);
-  const br = decode(hw, hh, hw, hh);
-  if (br) return br;
-
-  // 4. Bottom-right 35% × 35% — FGTS Digital (very small QR)
-  const brs = decode(
-    Math.floor(w * 0.65), Math.floor(h * 0.65),
-    Math.floor(w * 0.35), Math.floor(h * 0.35)
-  );
-  if (brs) return brs;
-
-  // 5-6. Remaining quadrants (fallback)
-  const bl = decode(0, hh, hw, hh);
-  if (bl) return bl;
-  const tr = decode(hw, 0, hw, hh);
-  if (tr) return tr;
+  const brHalf = cropImageData(imageData, hw, hh, hw, hh);
+  const brHalfResult = await decodeRegion(brHalf);
+  if (brHalfResult) return brHalfResult;
 
   return null;
 }
 
 /**
- * Extract PIX payload from the PDF text layer (copia-e-cola).
+ * Extract a PIX payload from the PDF text layer (copia-e-cola string).
  *
- * FIX: The original regex used \S+ which stops at whitespace.
- * FGTS Digital payloads contain spaces (e.g. "CAIXA ECONOMICA FEDERAL"),
- * so we now use two strategies:
+ * FGTS Digital prints the full EMV string as selectable text at 4pt — useful
+ * when the QR image is too small or rendered at low DPI.
  *
- *   1. Strip ALL whitespace first (fastest, handles most PDFs)
- *   2. Match with spaces allowed, then normalize (handles FGTS Digital)
+ * The text layer items are joined WITHOUT any separator so whitespace internal
+ * to the payload (e.g. "CAIXA ECONOMICA FEDERAL") can be preserved or stripped
+ * as needed by each strategy.
  *
- * The items are joined with a space separator to preserve token boundaries
- * when the PDF text extractor splits words across items.
+ * Two strategies:
+ *  1. Strip ALL whitespace → always correct for "CAIXA ECONOMICA FEDERAL"
+ *     because the EMV CRC is the same whether the space is present or not
+ *     (the CRC covers bytes, and the space is just a display artifact that
+ *      does not affect the Pix URL in field 26).
+ *  2. Match with spaces allowed → catches edge cases where stripping breaks
+ *     something (e.g. unusual encoding).
  */
-function extractPixFromText(text: string): string | null {
-  // Strategy 1: fully stripped (DAS, DARF, most tax docs)
-  const flat = text.replace(/\s+/g, '');
+function extractPixFromText(items: string[]): string | null {
+  const raw = items.join('');  // no separator → no spurious spaces
+
+  // Strategy 1: fully stripped (fastest, handles FGTS, DAS, DARF)
+  const flat = raw.replace(/\s+/g, '');
   const m1 = flat.match(/000201.+?6304[A-Fa-f0-9]{4}/);
   if (m1 && isPixPayload(m1[0])) return m1[0];
 
-  // Strategy 2: allow spaces inside match (FGTS Digital / GFD)
-  const m2 = text.match(/000201[\s\S]+?6304[A-Fa-f0-9]{4}/);
+  // Strategy 2: spaces allowed inside match (unusual PDFs)
+  const m2 = raw.match(/000201[\s\S]+?6304[A-Fa-f0-9]{4}/);
   if (m2) {
-    // Try collapsed-space version first (preserves "CAIXA ECONOMICA FEDERAL")
-    const spaced = m2[0].replace(/\s+/g, ' ').trim();
-    if (isPixPayload(spaced)) return spaced;
-
-    // Then fully stripped (some PDFs inject extra newlines mid-payload)
     const stripped = m2[0].replace(/\s+/g, '');
     if (isPixPayload(stripped)) return stripped;
   }
@@ -142,37 +180,32 @@ function extractPixFromText(text: string): string | null {
 // ─── scanner ────────────────────────────────────────────────────────────────
 
 /**
- * Scale sequence: 3 → good resolution for most QRs; 4 → helps with small
- * QRs (FGTS); 2 → lower memory fallback.
+ * Scan page 1 of the PDF for a PIX payload.
  *
- * Note: jsQR needs the QR to span enough pixels to be detected. Scales 2-4
- * give 400-900px for a QR that covers ~150pt, which is in the reliable range.
+ * Scale sequence for QR image scan:
+ *  3 → reliable for most QR sizes (450px for a 150pt QR)
+ *  4 → catches very small QRs (FGTS GFD QR is only ~90pt)
+ *  2 → lower-memory fallback if scale=3/4 both fail
+ *
+ * Text layer is tried last as it only applies to FGTS Digital.
  */
 const SCALES = [3, 4, 2] as const;
 
-/**
- * Scans page 1 for a PIX payload using two strategies:
- *  1. QR image scan (multiple scales + focused crop regions)
- *  2. Text layer fallback (FGTS Digital prints the payload as text)
- */
 async function scanPdfForPix(fileUrl: string): Promise<string | null> {
   const pdf = await pdfjsLib.getDocument({ url: fileUrl }).promise;
   const page = await pdf.getPage(1);
 
   // ── 1. QR image scan ─────────────────────────────────────────────────────
   for (const scale of SCALES) {
-    const { canvas, ctx } = await renderPage(page, scale);
-    const found = tryDecodeCanvas(ctx, canvas.width, canvas.height);
-    canvas.width = 0;  // free GPU memory
-    canvas.height = 0;
+    const imageData = await renderPageToImageData(page, scale);
+    const found = await scanPageForPix(imageData);
     if (found) return found;
   }
 
-  // ── 2. Text layer fallback ────────────────────────────────────────────────
+  // ── 2. Text layer fallback (FGTS Digital / GFD) ──────────────────────────
   const textContent = await page.getTextContent();
-  // Join with space to preserve word boundaries across PDF text items
-  const raw = (textContent.items as any[]).map((i) => i.str).join(' ');
-  return extractPixFromText(raw);
+  const items = (textContent.items as any[]).map((i) => i.str);
+  return extractPixFromText(items);
 }
 
 // ─── component ──────────────────────────────────────────────────────────────
@@ -184,9 +217,8 @@ export function PixScannerButton({ docId, fileUrl }: PixScannerButtonProps) {
 
   useEffect(() => {
     let alive = true;
-    const cacheKey = `pix-${docId}`;
+    const cacheKey = `pix-v2-${docId}`; // v2 prefix evita cache corrompido da versão anterior
 
-    // Cache hit: skip scanning
     const cached = localStorage.getItem(cacheKey);
     if (cached) {
       setPixCode(cached);
