@@ -74,6 +74,34 @@ export async function initDb() {
         "device_name" text,
         "created_at" timestamp DEFAULT now() NOT NULL
       );
+      
+      CREATE TABLE IF NOT EXISTS "serpro_config" (
+        "id" serial PRIMARY KEY,
+        "usuario_id" integer NOT NULL DEFAULT 1,
+        "consumer_key" text,
+        "consumer_secret" text,
+        "cert_path" text,
+        "cert_senha" text,
+        "cnpj_contratante" text,
+        "ambiente" text DEFAULT 'trial',
+        "updated_at" timestamp DEFAULT now()
+      );
+
+      CREATE TABLE IF NOT EXISTS "guias_geradas" (
+        "id" serial PRIMARY KEY,
+        "client_id" uuid NOT NULL REFERENCES "clients"("id"),
+        "usuario_id" integer NOT NULL DEFAULT 1,
+        "tipo_guia" text NOT NULL,
+        "competencia" text NOT NULL,
+        "status" text DEFAULT 'PENDENTE',
+        "pdf_path" text,
+        "data_vencimento" text,
+        "valor_total" real,
+        "numero_documento" text,
+        "erro_msg" text,
+        "created_at" timestamp DEFAULT now(),
+        "concluido_at" timestamp
+      );
     `);
 
     // Remove test companies
