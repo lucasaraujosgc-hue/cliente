@@ -17,12 +17,40 @@ export async function extractPixCodeFromPdf(buffer: Buffer): Promise<string | nu
         const fullText = textContent.items.map((item: any) => item.str).join('');
         const cleanText = fullText.replace(/\s+/g, '');
         
-        // Match PIX Code pattern (starts with 000201 and has normal PIX length)
-        // Pix BR Code regex (simple check)
-        const pixRegex = /000201[A-Za-z0-9\-\.]{30,}/;
+        // Regex to match PIX code: starts with 000201, contains PIX domain, ends with 6304 + 4 hex chars
+        const pixRegex = /000201[\s\S]+?(?:BR\.GOV\.BCB\.PIX|br\.gov\.bcb\.pix)[\s\S]+6304[A-Fa-f0-9]{4}/i;
+        
+        // Find the LAST occurrence of 6304 + 4 hex chars to ensure we capture the full CRC
+        const crcRegex = /6304[A-Fa-f0-9]{4}/gi;
+        
+        // Check without spaces
         const match = cleanText.match(pixRegex);
         if (match) {
-            return match[0];
+            let lastMatch = null;
+            let crcMatch;
+            const matchedText = match[0];
+            while ((crcMatch = crcRegex.exec(matchedText)) !== null) {
+                lastMatch = crcMatch;
+            }
+            if (lastMatch) {
+               return matchedText.substring(0, lastMatch.index + lastMatch[0].length);
+            }
+            return matchedText;
+        }
+
+        // Also check with spaces
+        const textMatch = fullText.match(pixRegex);
+        if (textMatch) {
+            let lastMatch = null;
+            let crcMatch;
+            const matchedText = textMatch[0];
+            while ((crcMatch = crcRegex.exec(matchedText)) !== null) {
+                lastMatch = crcMatch;
+            }
+            if (lastMatch) {
+               return matchedText.substring(0, lastMatch.index + lastMatch[0].length).replace(/\s+/g, "");
+            }
+            return matchedText.replace(/\s+/g, "");
         }
         
     }

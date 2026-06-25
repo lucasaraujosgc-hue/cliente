@@ -98,10 +98,13 @@ export function PixScannerButton({ docId, fileUrl }: PixScannerButtonProps) {
             const page = await pdf.getPage(i);
 
             const crops = [
-              { scale: 4.0, x1: 0.06, y1: 0.23, x2: 0.31, y2: 0.41 }, // Inter
+              { scale: 4.0, x1: 0.05, y1: 0.21, x2: 0.32, y2: 0.43 }, // Inter 1
+              { scale: 4.0, x1: 0.06, y1: 0.23, x2: 0.31, y2: 0.41 }, // Inter 2
+              { scale: 4.0, x1: 0.04, y1: 0.20, x2: 0.33, y2: 0.45 }, // Inter 3
               { scale: 4.0, x1: 0.82, y1: 0.86, x2: 0.93, y2: 0.94 }, // DAS
               { scale: 3.0, x1: 0.35, y1: 0.75, x2: 0.65, y2: 0.98 }, // FGTS
-              { scale: 1.5, x1: 0, y1: 0, x2: 1, y2: 1 }
+              { scale: 2.5, x1: 0, y1: 0, x2: 1, y2: 1 }, // Fallback full page high res
+              { scale: 1.5, x1: 0, y1: 0, x2: 1, y2: 1 } // Fallback full page low res
             ];
 
             for (const crop of crops) {
@@ -157,19 +160,17 @@ export function PixScannerButton({ docId, fileUrl }: PixScannerButtonProps) {
                 }
               );
 
-              if (
-                code &&
-                code.data.startsWith("000201") &&
-                code.data
-                  .toUpperCase()
-                  .includes("BR.GOV.BCB.PIX") &&
-                code.data
-                  .toUpperCase()
-                  .includes("5802BR") &&
-                /6304[A-Fa-f0-9]{4}$/i.test(code.data)
-              ) {
-                foundCode = code.data;
-                break;
+              if (code && code.data) {
+                const qrText = code.data.trim();
+                if (
+                  qrText.startsWith("000201") &&
+                  qrText.toUpperCase().includes("BR.GOV.BCB.PIX") &&
+                  qrText.toUpperCase().includes("5802BR") &&
+                  /6304[A-Fa-f0-9]{4}$/i.test(qrText)
+                ) {
+                  foundCode = qrText;
+                  break;
+                }
               }
             }
 
