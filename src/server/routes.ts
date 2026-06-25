@@ -564,6 +564,107 @@ export function setupRoutes(app: Express) {
     });
   });
 
+  app.get("/api/accountant/files/stats", verifyAccountantAuth, async (req, res) => {
+    try {
+      const allDocs = await db.select().from(documents);
+      let totalSize = 0;
+      for (const doc of allDocs) {
+         if (doc.fileUrl) {
+            if (doc.fileUrl.startsWith("data:")) {
+               const base64str = doc.fileUrl.split(",")[1];
+               if (base64str) {
+                  totalSize += Math.floor((base64str.length * 3) / 4);
+               }
+            } else if (doc.fileUrl.startsWith("/uploads/")) {
+               const filePath = path.join(process.cwd(), doc.fileUrl);
+               try {
+                  if (fs.existsSync(filePath)) {
+                     const stat = fs.statSync(filePath);
+                     totalSize += stat.size;
+                  }
+               } catch (e) {}
+            }
+         }
+      }
+      res.json({ totalSize });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/accountant/files", verifyAccountantAuth, async (req, res) => {
+    try {
+      const allDocs = await db.select().from(documents).orderBy(desc(documents.createdAt));
+      const allClients = await db.select().from(clients);
+      
+      const filesWithMetadata = allDocs.map(doc => {
+         const cl = allClients.find(c => c.id === doc.clientId);
+         let size = 0;
+         
+         if (doc.fileUrl) {
+            if (doc.fileUrl.startsWith("data:")) {
+               const base64str = doc.fileUrl.split(",")[1];
+               if (base64str) {
+                  size = Math.floor((base64str.length * 3) / 4);
+               }
+            } else if (doc.fileUrl.startsWith("/uploads/")) {
+               const filePath = path.join(process.cwd(), doc.fileUrl);
+               try {
+                  if (fs.existsSync(filePath)) {
+                     const stat = fs.statSync(filePath);
+                     size = stat.size;
+                  }
+               } catch (e) {}
+            }
+         }
+         
+         return {
+            id: doc.id,
+            title: doc.title,
+            category: doc.category,
+            status: doc.status,
+            createdAt: doc.createdAt.toISOString(),
+            fileUrl: doc.fileUrl,
+            size,
+            clientName: cl?.name || "Desconhecido",
+            clientId: doc.clientId,
+            uploadedBy: doc.uploadedBy
+         };
+      });
+      
+      res.json({ files: filesWithMetadata });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.delete("/api/accountant/files/bulk", verifyAccountantAuth, async (req, res) => {
+    try {
+      const { fileIds } = req.body;
+      if (!Array.isArray(fileIds) || fileIds.length === 0) {
+        return res.status(400).json({ error: "Nenhum arquivo selecionado" });
+      }
+
+      const docsToDelete = await db.select().from(documents).where(inArray(documents.id, fileIds));
+      
+      for (const doc of docsToDelete) {
+         if (doc.fileUrl && doc.fileUrl.startsWith("/uploads/")) {
+            const filePath = path.join(process.cwd(), doc.fileUrl);
+            try {
+               if (fs.existsSync(filePath)) {
+                  fs.unlinkSync(filePath);
+               }
+            } catch (e) {}
+         }
+      }
+
+      await db.delete(documents).where(inArray(documents.id, fileIds));
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   app.get("/api/accountant/inbox", verifyAccountantAuth, async (req, res) => {
     const allDocs = await db.select().from(documents).where(eq(documents.uploadedBy, "client")).orderBy(desc(documents.createdAt));
     const allClients = await db.select().from(clients);

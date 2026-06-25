@@ -297,6 +297,7 @@ export function AccountantLayout() {
 
   const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [totalSize, setTotalSize] = useState<number | null>(null);
 
   if (!token) {
     return <Navigate to="/admin/login" replace />;
@@ -307,6 +308,21 @@ export function AccountantLayout() {
       handleLogout();
     };
     window.addEventListener("unauthorized", handleUnauthorized);
+    
+    // Fetch stats
+    const fetchStats = async () => {
+      try {
+        const res = await fetch("/api/accountant/files/stats", {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        const data = await res.json();
+        if (data.totalSize !== undefined) {
+          setTotalSize(data.totalSize);
+        }
+      } catch(e) {}
+    };
+    fetchStats();
+
     return () => {
       window.removeEventListener("unauthorized", handleUnauthorized);
     };
@@ -317,10 +333,23 @@ export function AccountantLayout() {
     navigate("/admin/login");
   };
 
+  const formatSize = (bytes: number) => {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  };
+
   const menu = [
     { name: "Inbox", path: "/admin", icon: Upload },
     { name: "Clientes", path: "/admin/clients", icon: Users },
     { name: "Notificações", path: "/admin/notifications", icon: Bell },
+    { 
+      name: `Galeria de Arquivos ${totalSize !== null ? `(${formatSize(totalSize)})` : ''}`, 
+      path: "/admin/gallery", 
+      icon: Folder 
+    },
   ];
 
   const renderSidebarContent = () => (

@@ -15,6 +15,7 @@ import { AccountantDashboard } from "./pages/accountant/Dashboard";
 import { ClientsList } from "./pages/accountant/ClientsList";
 import { ClientDetail } from "./pages/accountant/ClientDetail";
 import { AccountantNotifications } from "./pages/accountant/Notifications";
+import { FileGallery } from "./pages/accountant/FileGallery";
 
 export default function App() {
   return (
@@ -41,6 +42,7 @@ export default function App() {
             <Route path="clients" element={<ClientsList />} />
             <Route path="client/:id" element={<ClientDetail />} />
             <Route path="notifications" element={<AccountantNotifications />} />
+            <Route path="gallery" element={<FileGallery />} />
           </Route>
         </Routes>
       </Router>
