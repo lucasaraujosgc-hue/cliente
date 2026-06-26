@@ -675,10 +675,17 @@ export function setupRoutes(app: Express) {
   // Gerar Guia (DCTFWEB / PGDASD) SERPRO
   app.post(
     "/api/pendencies/guia/:clienteId",
-    verifyClientAuth,
+    verifyAnyAuth,
     async (req, res) => {
       try {
         const clientId = req.params.clienteId;
+        
+        const tokenClientId = (req as any).user?.clientId || (req as any).user?.id;
+        const tokenRole = (req as any).user?.role;
+        if (tokenRole === "client" && tokenClientId !== clientId) {
+          return res.status(403).json({ error: "Acesso negado." });
+        }
+
         const { tipoGuia, competencia, documentId } = req.body;
 
         if (!tipoGuia || !competencia) {
@@ -915,10 +922,17 @@ export function setupRoutes(app: Express) {
 
   app.get(
     "/api/pendencies/guia/:clienteId/historico",
-    verifyClientAuth,
+    verifyAnyAuth,
     async (req, res) => {
       try {
         const clientId = req.params.clienteId;
+
+        const tokenClientId = (req as any).user?.clientId || (req as any).user?.id;
+        const tokenRole = (req as any).user?.role;
+        if (tokenRole === "client" && tokenClientId !== clientId) {
+          return res.status(403).json({ error: "Acesso negado." });
+        }
+
         const historico = await db
           .select()
           .from(guiasGeradas)
