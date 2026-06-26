@@ -114,3 +114,23 @@ export const messagesRelations = relations(messages, ({ one }) => ({
 		references: [clients.id],
 	}),
 }));
+
+export const scheduledNotifications = pgTable('scheduled_notifications', {
+  id: serial('id').primaryKey(),
+  clientId: uuid('client_id').references(() => clients.id, { onDelete: 'cascade' }),
+  type: text('type').notNull(), // 'immediate', 'recurrent', '3_days_before', 'on_due_date'
+  title: text('title').notNull(),
+  body: text('body').notNull(),
+  scheduleDay: integer('schedule_day'),
+  lastSent: timestamp('last_sent'),
+  active: boolean('active').default(true).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+export const scheduledNotificationsRelations = relations(scheduledNotifications, ({ one }) => ({
+	client: one(clients, {
+		fields: [scheduledNotifications.clientId],
+		references: [clients.id],
+	}),
+}));
+
