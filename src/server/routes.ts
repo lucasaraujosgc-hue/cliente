@@ -505,21 +505,81 @@ export function setupRoutes(app: Express) {
          return res.status(404).json({ error: "Cliente não encontrado." });
       }
 
+      const client = clientList[0];
+      const anoPA = competencia.substring(0, 4);
+      const mesPA = competencia.substring(4, 6);
+
+      let payload;
+      if (tipoGuia === "DCTFWEB_INSS") {
+        payload = {
+           contratante: { numero: "00000000000100", tipo: 2 },
+           autorPedidoDados: { numero: "00000000000100", tipo: 2 },
+           contribuinte: { numero: client.cnpj.replace(/\D/g, ""), tipo: 2 },
+           pedidoDados: {
+             idSistema: "DCTFWEB",
+             idServico: "GERARGUIA31",
+             versaoSistema: "1.0",
+             dados: JSON.stringify({ categoria: "GERAL_MENSAL", anoPA, mesPA })
+           }
+        };
+      } else {
+        payload = {
+           contratante: { numero: "00000000000100", tipo: 2 },
+           autorPedidoDados: { numero: "00000000000100", tipo: 2 },
+           contribuinte: { numero: client.cnpj.replace(/\D/g, ""), tipo: 2 },
+           pedidoDados: {
+             idSistema: "PGDASD",
+             idServico: "GERARDAS12",
+             versaoSistema: "1.0",
+             dados: JSON.stringify({ periodoApuracao: competencia })
+           }
+        };
+      }
+
+      console.log(`[SERPRO API MOCK] Enviando POST /Emitir para tipo ${tipoGuia}`);
+      console.log("[SERPRO API MOCK] Payload:", JSON.stringify(payload, null, 2));
+
       // Simulate API call to Integra Contador (SERPRO)
       await new Promise(r => setTimeout(r, 1500));
       
-      // Update the document to indicate it's waiting for the Integra Contador asynchronous webhook return
+      const fakePdfBase64 = "JVBERi0xLjEKJcKlwrHDqwoxIDAgb2JqCiAgPDwgL1R5cGUgL0NhdGFsb2cKICAgICAvUGFnZXMgMiAwIFIKICA+PgplbmRvYmoKMiAwIG9iagogIDw8IC9UeXBlIC9QYWdlcwogICAgIC9LaWRzIFszIDAgUl0KICAgICAvQ291bnQgMQogICAgIC9NZWRpYUJveCBbMCAwIDMwMCAxNDRdCiAgPj4KZW5kb2JqCjMgMCBvYmoKICA8PCAvVHlwZSAvUGFnZQogICAgIC9QYXJlbnQgMiAwIFIKICAgICAvUmVzb3VyY2VzCiAgICAgIDw8IC9Gb250CiAgICAgICAgICAgPDwgL0YxCiAgICAgICAgICAgICAgIDw8IC9UeXBlIC9Gb250CiAgICAgICAgICAgICAgICAgIC9TdWJ0eXBlIC9UeXBlMQogICAgICAgICAgICAgICAgICAvQmFzZUZvbnQgL1RpbWVzLVJvbWFuCiAgICAgICAgICAgICAgID4+CiAgICAgICAgICAgPj4KICAgICAgPj4KICAgICAvQ29udGVudHMgNCAwIFIKICA+PgplbmRvYmoKNCAwIG9iagogIDw8IC9MZW5ndGggNTUKICA+PgpzdHJlYW0KICBCVAogICAgL0YxIDE4IFRmCiAgICAwIDAgVGQKICAgIChHdWlhIGdlcmFkYSBwb3IgQVBJIFNFUlBSTykgVGoKICBFVAplbmRzdHJlYW0KZW5kb2JqCnhyZWYKMCA1CjAwMDAwMDAwMDAgNjU1MzUgZiAKMDAwMDAwMDAxOCAwMDAwMCBuIAowMDAwMDAwMDc3IDAwMDAwIG4gCjAwMDAwMDAxNzggMDAwMDAgbiAKMDAwMDAwMDQ1NyAwMDAwMCBuIAp0cmFpbGVyCiAgPDwgL1Jvb3QgMSAwIFIKICAgICAvU2l6ZSA1CiAgPj4Kc3RhcnR4cmVmCjU2NQolJUVPRgo=";
+      const fakePdfUrl = `data:application/pdf;base64,${fakePdfBase64}`;
+
+      const today = new Date();
+      const year = today.getFullYear();
+      const month = String(today.getMonth() + 1).padStart(2, '0');
+      const day = String(today.getDate()).padStart(2, '0');
+      const vencFormatado = `${year}-${month}-${day}`;
+      const fakePixCode = "00020126580014br.gov.bcb.pix0136a3bvv27flnh5204000053039865802BR5913Receita Federal6008Brasilia62070503***6304" + Math.floor(1000 + Math.random() * 9000);
+
+      const insertedGuia = await db.insert(guiasGeradas).values({
+        clientId: clientId,
+        usuarioId: 1, // dummy user id
+        tipoGuia: tipoGuia,
+        competencia: competencia,
+        status: 'CONCLUIDO',
+        dataVencimento: vencFormatado,
+        valorTotal: tipoGuia === "DCTFWEB_INSS" ? 450.00 : 120.50,
+        pdfPath: fakePdfUrl,
+        concluidoAt: new Date()
+      }).returning();
+
+      // Update the document to indicate it's generated
       if (documentId) {
         await db.update(documents)
-          .set({ status: "waiting_accountant" }) // We use this status to show "Aguardando contador..."
+          .set({ dueDate: vencFormatado, fileUrl: fakePdfUrl, pixCode: fakePixCode, status: "new" })
           .where(eq(documents.id, documentId));
       }
 
-      console.log("Requisição Integra Contador enviada com sucesso para o webhook/fila.");
+      console.log("[SERPRO API MOCK] Resposta processada com sucesso. Retornando guia.");
 
       res.json({
-        status: "waiting_accountant",
-        message: "Requisição enviada ao Integra Contador."
+        status: "CONCLUIDO",
+        guiaId: insertedGuia[0].id,
+        dataVencimento: vencFormatado,
+        valorTotal: insertedGuia[0].valorTotal,
+        pdfPath: fakePdfUrl,
+        pixCode: fakePixCode
       });
     } catch (e: any) {
       console.error("Erro no Integra Contador:", e);
