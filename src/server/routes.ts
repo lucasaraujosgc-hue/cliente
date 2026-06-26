@@ -39,6 +39,7 @@ webpush.setVapidDetails(
 );
 import { eq, desc, asc, inArray } from "drizzle-orm";
 import fs from "fs";
+import https from "https";
 import path from "path";
 
 const UPLOADS_DIR = path.join(process.cwd(), "uploads");
@@ -123,7 +124,7 @@ async function verifyIntegrationToken(
 }
 
 function verifyClientAuth(req: Request, res: Response, next: NextFunction) {
-  const token = req.headers.authorization?.split(" ")[1];
+  const token = req.headers.authorization?.split(" ")[1] || (req.query.token as string);
   if (!token) return res.status(401).json({ error: "No token provided" });
 
   try {
@@ -139,12 +140,26 @@ function verifyClientAuth(req: Request, res: Response, next: NextFunction) {
 }
 
 function verifyAccountantAuth(req: Request, res: Response, next: NextFunction) {
-  const token = req.headers.authorization?.split(" ")[1];
+  const token = req.headers.authorization?.split(" ")[1] || (req.query.token as string);
   if (!token) return res.status(401).json({ error: "No token provided" });
 
   try {
     const payload = jwt.verify(token, JWT_SECRET) as any;
     if (payload.role !== "accountant") throw new Error("Invalid role");
+    next();
+  } catch (e) {
+    return res.status(401).json({ error: "Invalid or expired token" });
+  }
+}
+
+function verifyAnyAuth(req: Request, res: Response, next: NextFunction) {
+  const token = req.headers.authorization?.split(" ")[1] || (req.query.token as string);
+  if (!token) return res.status(401).json({ error: "No token provided" });
+
+  try {
+    const payload = jwt.verify(token, JWT_SECRET) as any;
+    if (payload.role !== "client" && payload.role !== "accountant") throw new Error("Invalid role");
+    (req as any).user = payload;
     next();
   } catch (e) {
     return res.status(401).json({ error: "Invalid or expired token" });
@@ -751,7 +766,41 @@ export function setupRoutes(app: Express) {
 
         const fakePdfBase64 =
           "JVBERi0xLjEKJcKlwrHDqwoxIDAgb2JqCiAgPDwgL1R5cGUgL0NhdGFsb2cKICAgICAvUGFnZXMgMiAwIFIKICA+PgplbmRvYmoKMiAwIG9iagogIDw8IC9UeXBlIC9QYWdlcwogICAgIC9LaWRzIFszIDAgUl0KICAgICAvQ291bnQgMQogICAgIC9NZWRpYUJveCBbMCAwIDMwMCAxNDRdCiAgPj4KZW5kb2JqCjMgMCBvYmoKICA8PCAvVHlwZSAvUGFnZQogICAgIC9QYXJlbnQgMiAwIFIKICAgICAvUmVzb3VyY2VzCiAgICAgIDw8IC9Gb250CiAgICAgICAgICAgPDwgL0YxCiAgICAgICAgICAgICAgIDw8IC9UeXBlIC9Gb250CiAgICAgICAgICAgICAgICAgIC9TdWJ0eXBlIC9UeXBlMQogICAgICAgICAgICAgICAgICAvQmFzZUZvbnQgL1RpbWVzLVJvbWFuCiAgICAgICAgICAgICAgID4+CiAgICAgICAgICAgPj4KICAgICAgPj4KICAgICAvQ29udGVudHMgNCAwIFIKICA+PgplbmRvYmoKNCAwIG9iagogIDw8IC9MZW5ndGggNTUKICA+PgpzdHJlYW0KICBCVAogICAgL0YxIDE4IFRmCiAgICAwIDAgVGQKICAgIChHdWlhIGdlcmFkYSBwb3IgQVBJIFNFUlBSTykgVGoKICBFVAplbmRzdHJlYW0KZW5kb2JqCnhyZWYKMCA1CjAwMDAwMDAwMDAgNjU1MzUgZiAKMDAwMDAwMDAxOCAwMDAwMCBuIAowMDAwMDAwMDc3IDAwMDAwIG4gCjAwMDAwMDAxNzggMDAwMDAgbiAKMDAwMDAwMDQ1NyAwMDAwMCBuIAp0cmFpbGVyCiAgPDwgL1Jvb3QgMSAwIFIKICAgICAvU2l6ZSA1CiAgPj4Kc3RhcnR4cmVmCjU2NQolJUVPRgo=";
-        const fakePdfUrl = `data:application/pdf;base64,${fakePdfBase64}`;
+
+        // 2. Obtém token (mesma função já existente)
+        // const token = await getSerproToken(config);
+
+        // 3. mTLS agent para produção
+        // let certAgent;
+        // if (config.ambiente === "producao") {
+        //   const pfx = fs.readFileSync(config.cert_path);
+        //   certAgent = new https.Agent({ pfx, passphrase: config.cert_senha, rejectUnauthorized: true })
+        // }
+
+        // 5. POST no /Emitir — síncrono, sem polling
+        // const res = await serproPost(urls.emitir, token, payload, certAgent);
+        // const text = await res.text();
+
+        const text = JSON.stringify({
+          dados: tipoGuia === "DAS_SIMPLES" 
+            ? [{ pdf: fakePdfBase64, detalhamento: { dataVencimento: "20260626", valores: { total: 120.50 }, numeroDocumento: "123" } }]
+            : { PDFByteArrayBase64: fakePdfBase64 }
+        });
+
+        // 6. Extrai PDF base64 e metadados
+        const root = JSON.parse(text);
+        let dados = root.dados;
+        if (typeof dados === "string") dados = JSON.parse(dados);
+
+        let pdfBase64;
+        if (tipoGuia === "DAS_SIMPLES") {
+          const das = Array.isArray(dados) ? dados[0] : dados;
+          pdfBase64 = das.pdf;
+        } else {
+          pdfBase64 = dados?.PDFByteArrayBase64 ?? dados;
+        }
+
+        if (!pdfBase64) throw new Error("PDF não encontrado na resposta do SERPRO.");
 
         const today = new Date();
         const year = today.getFullYear();
@@ -770,14 +819,27 @@ export function setupRoutes(app: Express) {
             tipoGuia: tipoGuia,
             competencia: competencia,
             status: "CONCLUIDO",
-            dataVencimento: vencFormatado,
+            dataVencimento: vencFormatado, // Não usando dados reais da resposta como solicitado
             valorTotal: tipoGuia === "DCTFWEB_INSS" ? 450.0 : 120.5,
-            pdfPath: fakePdfUrl,
+            pdfPath: "", // Will update later
             concluidoAt: new Date(),
           })
           .returning();
+          
+        const guiaId = insertedGuia[0].id;
 
-        const realFileUrl = `/api/pendencies/guia/${insertedGuia[0].id}/pdf`;
+        // 7. Salva PDF em disco
+        const pdfDir = process.env.DATA_PATH 
+          ? path.join(process.env.DATA_PATH, "guias_pdfs") 
+          : path.join(process.cwd(), "data", "guias_pdfs");
+        fs.mkdirSync(pdfDir, { recursive: true });
+        const pdfFile = `guia_${tipoGuia}_${clientId}_${competencia}_${guiaId}.pdf`;
+        const pdfPath = path.join(pdfDir, pdfFile);
+        fs.writeFileSync(pdfPath, Buffer.from(pdfBase64, "base64"));
+        
+        await db.update(guiasGeradas).set({ pdfPath: pdfPath }).where(eq(guiasGeradas.id, guiaId));
+
+        const realFileUrl = `/api/pendencies/guia/${guiaId}/pdf`;
 
         // Update the document to indicate it's generated
         if (documentId) {
@@ -787,7 +849,7 @@ export function setupRoutes(app: Express) {
               dueDate: vencFormatado,
               fileUrl: realFileUrl,
               pixCode: fakePixCode,
-              status: "new",
+              status: "GUIA_ATUALIZADA",
             })
             .where(eq(documents.id, documentId));
         }
@@ -798,7 +860,7 @@ export function setupRoutes(app: Express) {
 
         res.json({
           status: "CONCLUIDO",
-          guiaId: insertedGuia[0].id,
+          guiaId: guiaId,
           dataVencimento: vencFormatado,
           valorTotal: insertedGuia[0].valorTotal,
           pdfPath: realFileUrl,
@@ -811,7 +873,7 @@ export function setupRoutes(app: Express) {
     },
   );
 
-  app.get("/api/pendencies/guia/:guiaId/pdf", async (req, res) => {
+  app.get("/api/pendencies/guia/:guiaId/pdf", verifyAnyAuth, async (req, res) => {
     try {
       const guiaId = parseInt(req.params.guiaId);
       const guia = await db
@@ -833,9 +895,18 @@ export function setupRoutes(app: Express) {
         );
         return res.send(buffer);
       }
-
-      // se for url ou path normal:
-      res.redirect(pdfData);
+      
+      if (fs.existsSync(pdfData)) {
+        res.setHeader("Content-Type", "application/pdf");
+        res.setHeader(
+          "Content-Disposition",
+          `attachment; filename=${path.basename(pdfData)}`,
+        );
+        const stream = fs.createReadStream(pdfData);
+        stream.pipe(res);
+      } else {
+        res.redirect(pdfData);
+      }
     } catch (e: any) {
       console.error(e);
       res.status(500).send("Erro ao baixar PDF");

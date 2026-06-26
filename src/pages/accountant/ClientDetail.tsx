@@ -96,6 +96,15 @@ export function ClientDetail() {
     }
   };
 
+  const getAuthenticatedFileUrl = (url: string | null) => {
+    if (!url) return undefined;
+    if (url.startsWith('/api/')) {
+      const token = localStorage.getItem('accountantToken') || sessionStorage.getItem('accountantToken');
+      return `${url}?token=${token}`;
+    }
+    return url;
+  };
+
   const loadData = () => {
     fetch(`/api/accountant/client/${id}`, {
       headers: { Authorization: `Bearer ${localStorage.getItem("accountantToken")}` }
@@ -473,7 +482,7 @@ export function ClientDetail() {
               </div>
               <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                  {doc.fileUrl && (
-                    <a href={doc.fileUrl} target="_blank" download rel="noreferrer" title="Baixar" className="p-2 bg-slate-100 text-slate-600 rounded-lg hover:bg-slate-200">
+                    <a href={getAuthenticatedFileUrl(doc.fileUrl)} target="_blank" download rel="noreferrer" title="Baixar" className="p-2 bg-slate-100 text-slate-600 rounded-lg hover:bg-slate-200">
                        <Download className="w-4 h-4" />
                     </a>
                  )}

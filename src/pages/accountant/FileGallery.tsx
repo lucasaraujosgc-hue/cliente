@@ -108,9 +108,18 @@ export function FileGallery() {
     }
   };
 
+  const getAuthenticatedFileUrl = (url: string | null) => {
+    if (!url) return "";
+    if (url.startsWith('/api/')) {
+      const token = localStorage.getItem('accountantToken') || sessionStorage.getItem('accountantToken');
+      return `${url}?token=${token}`;
+    }
+    return url;
+  };
+
   const downloadFile = (fileUrl: string, title: string) => {
     const link = document.createElement('a');
-    link.href = fileUrl;
+    link.href = getAuthenticatedFileUrl(fileUrl);
     link.download = title;
     document.body.appendChild(link);
     link.click();
@@ -128,12 +137,13 @@ export function FileGallery() {
         if (!f.fileUrl) continue;
         
         let blob;
+        const authUrl = getAuthenticatedFileUrl(f.fileUrl);
         if (f.fileUrl.startsWith("data:")) {
           const res = await fetch(f.fileUrl);
           blob = await res.blob();
         } else {
           // fetch from server
-          const res = await fetch(f.fileUrl);
+          const res = await fetch(authUrl);
           blob = await res.blob();
         }
         

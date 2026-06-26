@@ -105,6 +105,15 @@ export function ClientDashboard() {
     }
   }, [selectedCompetence]);
 
+  const getAuthenticatedFileUrl = (url: string | null) => {
+    if (!url) return undefined;
+    if (url.startsWith('/api/')) {
+      const token = localStorage.getItem('clientToken') || sessionStorage.getItem('clientToken');
+      return `${url}?token=${token}`;
+    }
+    return url;
+  };
+
   const subscribeToPush = async () => {
     try {
       const token = localStorage.getItem("clientToken") || sessionStorage.getItem("clientToken");
@@ -582,7 +591,7 @@ export function ClientDashboard() {
                           {doc.fileUrl && (
                             <>
                             <a 
-                              href={doc.fileUrl} 
+                              href={getAuthenticatedFileUrl(doc.fileUrl)} 
                               target="_blank" 
                               referrerPolicy="no-referrer"
                               rel="noreferrer" 
@@ -592,7 +601,7 @@ export function ClientDashboard() {
                               <Eye className="w-3.5 h-3.5 mr-1.5" /> Ver Arquivo
                             </a>
                             <a 
-                              href={doc.fileUrl} 
+                              href={getAuthenticatedFileUrl(doc.fileUrl)} 
                               target="_blank" 
                               download
                               referrerPolicy="no-referrer"
@@ -622,7 +631,7 @@ export function ClientDashboard() {
                             </button>
                           ) : (
                             doc.fileUrl && doc.fileUrl.toLowerCase().endsWith(".pdf") && (
-                              <PixScannerButton docId={doc.id} fileUrl={doc.fileUrl} />
+                              <PixScannerButton docId={doc.id} fileUrl={getAuthenticatedFileUrl(doc.fileUrl) || ""} />
                             )
                           )}
 
