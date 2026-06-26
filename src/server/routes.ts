@@ -41,6 +41,7 @@ import { eq, desc, asc, inArray } from "drizzle-orm";
 import fs from "fs";
 import https from "https";
 import path from "path";
+import fetchNode from "node-fetch";
 
 const UPLOADS_DIR = path.join(process.cwd(), "uploads");
 if (!fs.existsSync(UPLOADS_DIR)) {
@@ -164,6 +165,42 @@ function verifyAnyAuth(req: Request, res: Response, next: NextFunction) {
   } catch (e) {
     return res.status(401).json({ error: "Invalid or expired token" });
   }
+}
+
+async function getSerproToken(config: any) {
+  const credentials = Buffer.from(
+    `${config.consumerKey}:${config.consumerSecret}`
+  ).toString("base64");
+
+  const url = config.ambiente === "producao"
+    ? "https://gateway.apiserpro.serpro.gov.br/token"
+    : "https://gateway.apiserpro.serpro.gov.br/token";
+
+  const resp = await fetchNode(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Basic ${credentials}`,
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: "grant_type=client_credentials",
+  });
+
+  if (!resp.ok) throw new Error(`Erro ao obter token SERPRO: ${resp.status}`);
+  const data = await resp.json() as any;
+  return data.access_token;
+}
+
+async function serproPost(url: string, token: string, payload: any, agent?: any) {
+  return fetchNode(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+      jwt_token: token,
+    },
+    body: JSON.stringify(payload),
+    agent,
+  });
 }
 
 export function setupRoutes(app: Express) {
@@ -760,39 +797,36 @@ export function setupRoutes(app: Express) {
           };
         }
 
-        console.log(
-          `[SERPRO API MOCK] Enviando POST /Emitir para tipo ${tipoGuia}`,
-        );
-        console.log(
-          "[SERPRO API MOCK] Payload:",
-          JSON.stringify(payload, null, 2),
-        );
+        if (serproList.length === 0 || !serproList[0].consumerKey) {
+           return res.status(400).json({ error: "Integra Contador não configurado. Acesse as configurações." });
+        }
+        const config = serproList[0];
 
-        // Simulate API call to Integra Contador (SERPRO)
-        await new Promise((r) => setTimeout(r, 1500));
+        console.log(`[SERPRO API] Enviando POST /Emitir para tipo ${tipoGuia}`);
+        
+        let certAgent;
+        if (config.ambiente === "producao" && config.certPath) {
+          const pfx = fs.readFileSync(config.certPath);
+          certAgent = new https.Agent({
+            pfx,
+            passphrase: config.certSenha || "",
+            rejectUnauthorized: true,
+          });
+        }
 
-        const fakePdfBase64 =
-          "JVBERi0xLjEKJcKlwrHDqwoxIDAgb2JqCiAgPDwgL1R5cGUgL0NhdGFsb2cKICAgICAvUGFnZXMgMiAwIFIKICA+PgplbmRvYmoKMiAwIG9iagogIDw8IC9UeXBlIC9QYWdlcwogICAgIC9LaWRzIFszIDAgUl0KICAgICAvQ291bnQgMQogICAgIC9NZWRpYUJveCBbMCAwIDMwMCAxNDRdCiAgPj4KZW5kb2JqCjMgMCBvYmoKICA8PCAvVHlwZSAvUGFnZQogICAgIC9QYXJlbnQgMiAwIFIKICAgICAvUmVzb3VyY2VzCiAgICAgIDw8IC9Gb250CiAgICAgICAgICAgPDwgL0YxCiAgICAgICAgICAgICAgIDw8IC9UeXBlIC9Gb250CiAgICAgICAgICAgICAgICAgIC9TdWJ0eXBlIC9UeXBlMQogICAgICAgICAgICAgICAgICAvQmFzZUZvbnQgL1RpbWVzLVJvbWFuCiAgICAgICAgICAgICAgID4+CiAgICAgICAgICAgPj4KICAgICAgPj4KICAgICAvQ29udGVudHMgNCAwIFIKICA+PgplbmRvYmoKNCAwIG9iagogIDw8IC9MZW5ndGggNTUKICA+PgpzdHJlYW0KICBCVAogICAgL0YxIDE4IFRmCiAgICAwIDAgVGQKICAgIChHdWlhIGdlcmFkYSBwb3IgQVBJIFNFUlBSTykgVGoKICBFVAplbmRzdHJlYW0KZW5kb2JqCnhyZWYKMCA1CjAwMDAwMDAwMDAgNjU1MzUgZiAKMDAwMDAwMDAxOCAwMDAwMCBuIAowMDAwMDAwMDc3IDAwMDAwIG4gCjAwMDAwMDAxNzggMDAwMDAgbiAKMDAwMDAwMDQ1NyAwMDAwMCBuIAp0cmFpbGVyCiAgPDwgL1Jvb3QgMSAwIFIKICAgICAvU2l6ZSA1CiAgPj4Kc3RhcnR4cmVmCjU2NQolJUVPRgo=";
+        const token = await getSerproToken(config);
 
-        // 2. Obtém token (mesma função já existente)
-        // const token = await getSerproToken(config);
+        const baseUrl = config.ambiente === "producao"
+          ? "https://gateway.apiserpro.serpro.gov.br/integra-contador/v1"
+          : "https://gateway.apiserpro.serpro.gov.br/integra-contador-trial/v1";
 
-        // 3. mTLS agent para produção
-        // let certAgent;
-        // if (config.ambiente === "producao") {
-        //   const pfx = fs.readFileSync(config.cert_path);
-        //   certAgent = new https.Agent({ pfx, passphrase: config.cert_senha, rejectUnauthorized: true })
-        // }
-
-        // 5. POST no /Emitir — síncrono, sem polling
-        // const res = await serproPost(urls.emitir, token, payload, certAgent);
-        // const text = await res.text();
-
-        const text = JSON.stringify({
-          dados: tipoGuia === "DAS_SIMPLES" 
-            ? [{ pdf: fakePdfBase64, detalhamento: { dataVencimento: "20260626", valores: { total: 120.50 }, numeroDocumento: "123" } }]
-            : { PDFByteArrayBase64: fakePdfBase64 }
-        });
+        const apiResp = await serproPost(`${baseUrl}/Emitir`, token, payload, certAgent);
+        if (!apiResp.ok) {
+          const errBody = await apiResp.text();
+          throw new Error(`SERPRO retornou ${apiResp.status}: ${errBody}`);
+        }
+        
+        const text = await apiResp.text();
 
         // 6. Extrai PDF base64 e metadados
         const root = JSON.parse(text);
