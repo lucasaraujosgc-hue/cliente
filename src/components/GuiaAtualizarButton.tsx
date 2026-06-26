@@ -39,7 +39,7 @@ export function GuiaAtualizarButton({ clienteId, guia, onAtualizado, isOverdue }
       const token = localStorage.getItem("clientToken") || sessionStorage.getItem("clientToken");
       
       if (isSupported) {
-        const parts = guia.competencia.split("/");
+        const parts = (guia.competencia || "").split("/");
         const compStr = parts.length === 2 ? `${parts[1]}${parts[0]}` : "202605";
 
         const res = await fetch(`/api/pendencies/guia/${clienteId}`, {
