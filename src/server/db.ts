@@ -103,6 +103,18 @@ export async function initDb() {
         "created_at" timestamp DEFAULT now(),
         "concluido_at" timestamp
       );
+
+      CREATE TABLE IF NOT EXISTS "scheduled_notifications" (
+        "id" serial PRIMARY KEY,
+        "client_id" uuid REFERENCES "clients"("id") ON DELETE CASCADE,
+        "type" text NOT NULL,
+        "title" text NOT NULL,
+        "body" text NOT NULL,
+        "schedule_day" integer,
+        "last_sent" timestamp,
+        "active" boolean DEFAULT true NOT NULL,
+        "created_at" timestamp DEFAULT now() NOT NULL
+      );
     `);
 
     // Remove test companies
@@ -137,4 +149,5 @@ export async function initDb() {
     client.release();
   }
 }
+
 
