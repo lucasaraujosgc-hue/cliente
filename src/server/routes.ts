@@ -13,6 +13,7 @@ import {
   subscriptions,
   guiasGeradas,
   serproConfig,
+  scheduledNotifications,
 } from "./schema";
 import webpush from "web-push";
 
@@ -42,6 +43,7 @@ import fs from "fs";
 import https from "https";
 import path from "path";
 import fetchNode from "node-fetch";
+import { differenceInDays, parseISO, format } from "date-fns";
 
 const UPLOADS_DIR = path.join(process.cwd(), "uploads");
 if (!fs.existsSync(UPLOADS_DIR)) {
@@ -177,7 +179,7 @@ function isUuid(str: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
 }
 
-async function getSerproToken(config: any) {
+async function getSerproToken(config: any, agent?: any) {
   const cacheKey = `${config.consumerKey}:${config.ambiente}`;
   const cached = serproTokenCache[cacheKey];
   
@@ -190,18 +192,23 @@ async function getSerproToken(config: any) {
     `${config.consumerKey}:${config.consumerSecret}`
   ).toString("base64");
 
-  const url = "https://gateway.apiserpro.serpro.gov.br/token";
+  const url = "https://autenticacao.sapi.serpro.gov.br/authenticate";
 
   const resp = await fetchNode(url, {
     method: "POST",
     headers: {
       Authorization: `Basic ${credentials}`,
+      "role-type": "TERCEIROS",
       "Content-Type": "application/x-www-form-urlencoded",
     },
     body: "grant_type=client_credentials",
+    agent,
   });
 
-  if (!resp.ok) throw new Error(`Erro ao obter token SERPRO: ${resp.status}`);
+  if (!resp.ok) {
+    const errText = await resp.text();
+    throw new Error(`Erro ao obter token SERPRO: ${resp.status} - ${errText}`);
+  }
   const data = await resp.json() as any;
   
   const expiresIn = data.expires_in || 3600;
@@ -863,7 +870,7 @@ export function setupRoutes(app: Express) {
         let isMock = false;
 
         try {
-          const token = await getSerproToken(config);
+          const token = await getSerproToken(config, certAgent);
           const baseUrl = config.ambiente === "producao"
             ? "https://gateway.apiserpro.serpro.gov.br/integra-contador/v1"
             : "https://gateway.apiserpro.serpro.gov.br/integra-contador-trial/v1";
@@ -1914,4 +1921,213 @@ export function setupRoutes(app: Express) {
       }
     },
   );
+
+  app.get(
+    "/api/admin/notifications/scheduled",
+    verifyAccountantAuth,
+    async (req, res) => {
+      try {
+        const list = await db
+          .select()
+          .from(scheduledNotifications)
+          .orderBy(desc(scheduledNotifications.createdAt));
+        res.json({ success: true, list });
+      } catch (e: any) {
+        res.status(500).json({ error: e.message });
+      }
+    },
+  );
+
+  app.post(
+    "/api/admin/notifications/schedule",
+    verifyAccountantAuth,
+    async (req, res) => {
+      try {
+        const { clientId, type, title, body, scheduleDay } = req.body;
+        if (!type || !title || !body) {
+          return res.status(400).json({ error: "Campos obrigatórios: type, title, body" });
+        }
+
+        const [newRule] = await db
+          .insert(scheduledNotifications)
+          .values({
+            clientId: clientId || null,
+            type,
+            title,
+            body,
+            scheduleDay: scheduleDay ? parseInt(scheduleDay) : null,
+            active: true,
+          })
+          .returning();
+
+        res.json({ success: true, rule: newRule });
+      } catch (e: any) {
+        res.status(500).json({ error: e.message });
+      }
+    },
+  );
+
+  app.delete(
+    "/api/admin/notifications/scheduled/:id",
+    verifyAccountantAuth,
+    async (req, res) => {
+      try {
+        const ruleId = parseInt(req.params.id);
+        if (isNaN(ruleId)) {
+          return res.status(400).json({ error: "ID inválido" });
+        }
+        await db
+          .delete(scheduledNotifications)
+          .where(eq(scheduledNotifications.id, ruleId));
+        res.json({ success: true });
+      } catch (e: any) {
+        res.status(500).json({ error: e.message });
+      }
+    },
+  );
 }
+
+// Background sweeper for notifications
+let lastSweepDate = "";
+
+function parseDueDateString(dateStr: string) {
+  if (!dateStr) return null;
+  try {
+    if (dateStr.includes("/")) {
+      const [day, month, year] = dateStr.split("/").map(Number);
+      return new Date(year, month - 1, day);
+    } else if (dateStr.includes("-")) {
+      const parts = dateStr.split("T")[0].split("-");
+      return new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+    }
+    return new Date(dateStr);
+  } catch (e) {
+    return null;
+  }
+}
+
+function getDaysDiff(dueDateStr: string, today: Date) {
+  const parsedDue = parseDueDateString(dueDateStr);
+  if (!parsedDue) return -999;
+  
+  const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const dueStart = new Date(parsedDue.getFullYear(), parsedDue.getMonth(), parsedDue.getDate());
+  return differenceInDays(dueStart, todayStart);
+}
+
+async function sendPushToClients(clientId: string | null, title: string, body: string) {
+  try {
+    let subs = [];
+    if (clientId) {
+      subs = await db
+        .select()
+        .from(subscriptions)
+        .where(eq(subscriptions.clientId, clientId));
+    } else {
+      subs = await db.select().from(subscriptions);
+    }
+
+    const payload = JSON.stringify({ title, body });
+    const promises = subs.map((sub) => {
+      return webpush
+        .sendNotification(
+          sub.subscriptionObject as webpush.PushSubscription,
+          payload,
+        )
+        .catch((err) => {
+          console.error("Error sending push in sweep to sub:", sub.id, err);
+          if (err.statusCode === 410 || err.statusCode === 404) {
+            return db
+              .delete(subscriptions)
+              .where(eq(subscriptions.id, sub.id));
+          }
+        });
+    });
+    await Promise.all(promises);
+  } catch (err) {
+    console.error("Erro ao enviar push via sweeper:", err);
+  }
+}
+
+async function runNotificationSweeper() {
+  const today = new Date();
+  const todayStr = format(today, "yyyy-MM-dd");
+  
+  if (lastSweepDate === todayStr) {
+    return; // Já rodou hoje
+  }
+  lastSweepDate = todayStr;
+  
+  console.log(`[Notification Sweeper] Iniciando varredura diária: ${todayStr}`);
+  try {
+    const activeRules = await db
+      .select()
+      .from(scheduledNotifications)
+      .where(eq(scheduledNotifications.active, true));
+
+    for (const rule of activeRules) {
+      if (rule.type === "recurrent") {
+        if (rule.scheduleDay && today.getDate() === rule.scheduleDay) {
+          const lastSent = rule.lastSent;
+          const alreadySentThisMonth = lastSent && 
+            lastSent.getMonth() === today.getMonth() && 
+            lastSent.getFullYear() === today.getFullYear();
+            
+          if (!alreadySentThisMonth) {
+            console.log(`[Notification Sweeper] Disparando lembrete recorrente "${rule.title}"`);
+            await sendPushToClients(rule.clientId, rule.title, rule.body);
+            await db
+              .update(scheduledNotifications)
+              .set({ lastSent: today })
+              .where(eq(scheduledNotifications.id, rule.id));
+          }
+        }
+      } else if (rule.type === "3_days_before" || rule.type === "on_due_date") {
+        const targetDays = rule.type === "3_days_before" ? 3 : 0;
+        
+        let query;
+        if (rule.clientId) {
+          query = db
+            .select()
+            .from(documents)
+            .where(eq(documents.clientId, rule.clientId));
+        } else {
+          query = db
+            .select()
+            .from(documents);
+        }
+        
+        const docs = await query;
+        for (const doc of docs) {
+          if (doc.status === "paid" || !doc.dueDate) continue;
+          
+          const diff = getDaysDiff(doc.dueDate, today);
+          if (diff === targetDays) {
+            const dynamicBody = rule.body
+              .replace(/\[NOME_GUIA\]/g, doc.title)
+              .replace(/\[VENCIMENTO\]/g, doc.dueDate);
+              
+            const dynamicTitle = rule.title
+              .replace(/\[NOME_GUIA\]/g, doc.title)
+              .replace(/\[VENCIMENTO\]/g, doc.dueDate);
+
+            console.log(`[Notification Sweeper] Enviando alerta para guia "${doc.title}" (vence em ${diff} dias)`);
+            await sendPushToClients(doc.clientId, dynamicTitle, dynamicBody);
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error("[Notification Sweeper] Falha na execução da varredura:", err);
+  }
+}
+
+// Executa a varredura a cada 30 minutos
+setInterval(() => {
+  runNotificationSweeper().catch(console.error);
+}, 30 * 60 * 1000);
+
+// Executa logo após a inicialização
+setTimeout(() => {
+  runNotificationSweeper().catch(console.error);
+}, 10000);
