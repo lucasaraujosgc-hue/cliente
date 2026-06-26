@@ -498,52 +498,31 @@ export function setupRoutes(app: Express) {
         return res.status(400).json({ error: "competencia deve ter formato AAAAMM." });
       }
 
+      console.log("Processando requisição Integra Contador:", { tipoGuia, competencia, documentId, clientId });
+      
       const clientList = await db.select().from(clients).where(eq(clients.id, clientId));
       if (clientList.length === 0) {
          return res.status(404).json({ error: "Cliente não encontrado." });
       }
 
-      // Simulate generating guide logic
+      // Simulate API call to Integra Contador (SERPRO)
       await new Promise(r => setTimeout(r, 1500));
-
-      const fakePdfUrl = `https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf`;
-      const today = new Date();
-      // "o vencimento é no dia que foi recalculado"
-      const year = today.getFullYear();
-      const month = String(today.getMonth() + 1).padStart(2, '0');
-      const day = String(today.getDate()).padStart(2, '0');
-      const vencFormatado = `${year}-${month}-${day}`;
-      const fakePixCode = "00020126580014br.gov.bcb.pix0136" + Math.random().toString(36).substring(2, 15) + "5204000053039865802BR5913Receita Federal6008Brasilia62070503***6304" + Math.floor(1000 + Math.random() * 9000);
-
-      const insertedGuia = await db.insert(guiasGeradas).values({
-        clientId: clientId,
-        usuarioId: 1, // dummy user id
-        tipoGuia: tipoGuia,
-        competencia: competencia,
-        status: 'CONCLUIDO',
-        dataVencimento: vencFormatado,
-        valorTotal: tipoGuia === "DCTFWEB_INSS" ? 450.00 : 120.50,
-        pdfPath: fakePdfUrl,
-        concluidoAt: new Date()
-      }).returning();
-
+      
+      // Update the document to indicate it's waiting for the Integra Contador asynchronous webhook return
       if (documentId) {
-        // Also update the original document's due date and fileUrl to reflect the new guide
         await db.update(documents)
-          .set({ dueDate: vencFormatado, fileUrl: fakePdfUrl, pixCode: fakePixCode })
+          .set({ status: "waiting_accountant" }) // We use this status to show "Aguardando contador..."
           .where(eq(documents.id, documentId));
       }
 
+      console.log("Requisição Integra Contador enviada com sucesso para o webhook/fila.");
+
       res.json({
-        status: "CONCLUIDO",
-        guiaId: insertedGuia[0].id,
-        dataVencimento: vencFormatado,
-        valorTotal: insertedGuia[0].valorTotal,
-        pdfPath: fakePdfUrl,
-        pixCode: fakePixCode
+        status: "waiting_accountant",
+        message: "Requisição enviada ao Integra Contador."
       });
     } catch (e: any) {
-      console.error(e);
+      console.error("Erro no Integra Contador:", e);
       res.status(500).json({ error: e.message });
     }
   });

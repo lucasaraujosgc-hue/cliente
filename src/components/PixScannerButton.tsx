@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
-import { Copy, Check, QrCode } from 'lucide-react';
-import * as pdfjsLib from 'pdfjs-dist';
-import jsQR from 'jsqr';
+import React, { useState, useEffect } from "react";
+import { Copy, Check, QrCode } from "lucide-react";
+import * as pdfjsLib from "pdfjs-dist";
+import jsQR from "jsqr";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
 
@@ -19,7 +19,7 @@ export function PixScannerButton({ docId, fileUrl }: PixScannerButtonProps) {
   useEffect(() => {
     // Automatically try to scan in background when component mounts to hide button if no PIX
     let mounted = true;
-    
+
     const preScan = async () => {
       try {
         const loadingTask = pdfjsLib.getDocument({ url: fileUrl });
@@ -61,23 +61,135 @@ export function PixScannerButton({ docId, fileUrl }: PixScannerButtonProps) {
               }
 
               if (lastMatch) {
-                const end =
-                  lastMatch.index + lastMatch[0].length;
+                const end = lastMatch.index + lastMatch[0].length;
 
                 foundCode = payload.substring(0, end);
 
-                console.log(
-                  "[FGTS DIGITAL] PIX encontrado:",
-                  foundCode
-                );
+                console.log("[FGTS DIGITAL] PIX encontrado:", foundCode);
 
                 break;
               }
             }
           }
-          
+
           if (!foundCode) {
-            const pixRegex = /000201[\s\S]+?(?:BR\.GOV\.BCB\.PIX|br\.gov\.bcb\.pix)[\s\S]+5802BR[\s\S]+6304[A-Fa-f0-9]{4}/i;
+            try {
+              const ops = await page.getOperatorList();
+              for (let j = 0; j < ops.fnArray.length; j++) {
+                if (ops.fnArray[j] === pdfjsLib.OPS.paintImageXObject) {
+                  const objId = ops.argsArray[j][0];
+                  try {
+                    const imgObj = page.objs.get(objId) as any;
+                    if (imgObj) {
+                      let canvas;
+                      if (imgObj.bitmap) {
+                        canvas = document.createElement("canvas");
+                        canvas.width = imgObj.bitmap.width;
+                        canvas.height = imgObj.bitmap.height;
+                        const ctx = canvas.getContext("2d");
+                        ctx?.drawImage(imgObj.bitmap, 0, 0);
+                      } else if (imgObj.data && imgObj.width && imgObj.height) {
+                        canvas = document.createElement("canvas");
+                        canvas.width = imgObj.width;
+                        canvas.height = imgObj.height;
+                        const ctx = canvas.getContext("2d");
+                        let rgbaData;
+
+                        if (
+                          imgObj.data.length ===
+                          imgObj.width * imgObj.height * 3
+                        ) {
+                          rgbaData = new Uint8ClampedArray(
+                            imgObj.width * imgObj.height * 4,
+                          );
+                          for (
+                            let k = 0, l = 0;
+                            k < imgObj.data.length;
+                            k += 3, l += 4
+                          ) {
+                            rgbaData[l] = imgObj.data[k];
+                            rgbaData[l + 1] = imgObj.data[k + 1];
+                            rgbaData[l + 2] = imgObj.data[k + 2];
+                            rgbaData[l + 3] = 255;
+                          }
+                        } else if (
+                          imgObj.data.length ===
+                          imgObj.width * imgObj.height * 4
+                        ) {
+                          rgbaData = new Uint8ClampedArray(imgObj.data);
+                        } else if (
+                          imgObj.data.length ===
+                          imgObj.width * imgObj.height
+                        ) {
+                          rgbaData = new Uint8ClampedArray(
+                            imgObj.width * imgObj.height * 4,
+                          );
+                          for (
+                            let k = 0, l = 0;
+                            k < imgObj.data.length;
+                            k++, l += 4
+                          ) {
+                            rgbaData[l] = imgObj.data[k];
+                            rgbaData[l + 1] = imgObj.data[k];
+                            rgbaData[l + 2] = imgObj.data[k];
+                            rgbaData[l + 3] = 255;
+                          }
+                        }
+
+                        if (rgbaData && ctx) {
+                          const idata = new ImageData(
+                            rgbaData,
+                            imgObj.width,
+                            imgObj.height,
+                          );
+                          ctx.putImageData(idata, 0, 0);
+                        }
+                      }
+
+                      if (canvas) {
+                        const ctx = canvas.getContext("2d", {
+                          willReadFrequently: true,
+                        });
+                        const imageData = ctx?.getImageData(
+                          0,
+                          0,
+                          canvas.width,
+                          canvas.height,
+                        );
+                        if (imageData) {
+                          const code = jsQR(
+                            imageData.data,
+                            imageData.width,
+                            imageData.height,
+                            { inversionAttempts: "attemptBoth" },
+                          );
+                          if (
+                            code &&
+                            code.data &&
+                            code.data.toLowerCase().includes("br.gov.bcb.pix")
+                          ) {
+                            console.log(
+                              "Found PIX QR via native image extraction!",
+                            );
+                            foundCode = code.data;
+                            break;
+                          }
+                        }
+                      }
+                    }
+                  } catch (e) {
+                    console.warn("Failed to extract image object", e);
+                  }
+                }
+              }
+            } catch (e) {
+              console.warn("Failed operator list processing", e);
+            }
+          }
+
+          if (!foundCode) {
+            const pixRegex =
+              /000201[\s\S]+?(?:BR\.GOV\.BCB\.PIX|br\.gov\.bcb\.pix)[\s\S]+5802BR[\s\S]+6304[A-Fa-f0-9]{4}/i;
             const fullMatch = pageText.match(pixRegex);
             if (fullMatch) {
               foundCode = fullMatch[0].replace(/\s+/g, "");
@@ -105,26 +217,23 @@ export function PixScannerButton({ docId, fileUrl }: PixScannerButtonProps) {
               { scale: 3.0, x1: 0.35, y1: 0.75, x2: 0.65, y2: 0.98 }, // FGTS
               { scale: 4.0, x1: 0, y1: 0, x2: 1, y2: 1 }, // Fallback full page very high res
               { scale: 2.5, x1: 0, y1: 0, x2: 1, y2: 1 }, // Fallback full page high res
-              { scale: 1.5, x1: 0, y1: 0, x2: 1, y2: 1 } // Fallback full page low res
+              { scale: 1.5, x1: 0, y1: 0, x2: 1, y2: 1 }, // Fallback full page low res
             ];
 
             for (const crop of crops) {
               const viewport = page.getViewport({
-                scale: crop.scale
+                scale: crop.scale,
               });
 
               const cropX = viewport.width * crop.x1;
               const cropY = viewport.height * crop.y1;
-              const cropW =
-                viewport.width * (crop.x2 - crop.x1);
-              const cropH =
-                viewport.height * (crop.y2 - crop.y1);
+              const cropW = viewport.width * (crop.x2 - crop.x1);
+              const cropH = viewport.height * (crop.y2 - crop.y1);
 
-              const canvas =
-                document.createElement("canvas");
+              const canvas = document.createElement("canvas");
 
               const context = canvas.getContext("2d", {
-                willReadFrequently: true
+                willReadFrequently: true,
               });
 
               if (!context) continue;
@@ -135,21 +244,14 @@ export function PixScannerButton({ docId, fileUrl }: PixScannerButtonProps) {
               await page.render({
                 canvasContext: context,
                 viewport,
-                transform: [
-                  1,
-                  0,
-                  0,
-                  1,
-                  -cropX,
-                  -cropY
-                ]
+                transform: [1, 0, 0, 1, -cropX, -cropY],
               } as any).promise;
 
               const imageData = context.getImageData(
                 0,
                 0,
                 canvas.width,
-                canvas.height
+                canvas.height,
               );
 
               const code = jsQR(
@@ -157,8 +259,8 @@ export function PixScannerButton({ docId, fileUrl }: PixScannerButtonProps) {
                 imageData.width,
                 imageData.height,
                 {
-                  inversionAttempts: "attemptBoth"
-                }
+                  inversionAttempts: "attemptBoth",
+                },
               );
 
               if (code && code.data) {
@@ -194,9 +296,11 @@ export function PixScannerButton({ docId, fileUrl }: PixScannerButtonProps) {
         }
       }
     };
-    
+
     preScan();
-    return () => { mounted = false; };
+    return () => {
+      mounted = false;
+    };
   }, [fileUrl]);
 
   const copyToClipboard = (text: string) => {
@@ -213,16 +317,16 @@ export function PixScannerButton({ docId, fileUrl }: PixScannerButtonProps) {
 
   // hide if scanned and no pix code found, or if scanning isn't done yet hide to avoid flicker of wrong state
   if (!scanned || (scanned && !pixCode)) {
-    return null; 
+    return null;
   }
 
   return (
-    <button 
+    <button
       onClick={handleCopyClick}
       className={`h-10 px-3 border text-xs font-bold rounded-xl transition-all flex items-center justify-center min-w-[100px] ${
-        copied 
-          ? 'bg-emerald-50 border-emerald-200 text-emerald-700 dark:bg-emerald-900/30 dark:border-emerald-800/50 dark:text-emerald-400' 
-          : 'bg-indigo-50 dark:bg-indigo-900/30 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 border-indigo-100 dark:border-indigo-800/50 text-indigo-700 dark:text-indigo-300'
+        copied
+          ? "bg-emerald-50 border-emerald-200 text-emerald-700 dark:bg-emerald-900/30 dark:border-emerald-800/50 dark:text-emerald-400"
+          : "bg-indigo-50 dark:bg-indigo-900/30 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 border-indigo-100 dark:border-indigo-800/50 text-indigo-700 dark:text-indigo-300"
       }`}
     >
       {copied ? (

@@ -55,20 +55,25 @@ export function GuiaAtualizarButton({ clienteId, guia, onAtualizado, isOverdue }
           throw new Error(err.error || "Erro ao gerar guia.");
         }
         const data = await res.json();
-        setAtualizada(true);
-        setNovaDataVencimento(data.dataVencimento);
-        setPdfPath(data.pdfPath);
-        if (data.pixCode) {
-            setPixCode(data.pixCode);
+        
+        if (data.status === "waiting_accountant") {
+           setMensagemEnviada(true);
+           onAtualizado({...guia, status: "waiting_accountant", aguardandoContador: true});
+        } else {
+           setAtualizada(true);
+           setNovaDataVencimento(data.dataVencimento);
+           setPdfPath(data.pdfPath);
+           if (data.pixCode) {
+               setPixCode(data.pixCode);
+           }
+           onAtualizado({
+             ...guia,
+             status: "GUIA_ATUALIZADA",
+             dataVencimento: data.dataVencimento,
+             valor: data.valorTotal,
+             pixCode: data.pixCode
+           });
         }
-
-        onAtualizado({
-          ...guia,
-          status: "GUIA_ATUALIZADA",
-          dataVencimento: data.dataVencimento,
-          valor: data.valorTotal,
-          pixCode: data.pixCode
-        });
       } else {
          // Send message to accountant
          const msg = `Por favor, preciso recalcular a guia: ${tipoLabel} - Competência: ${guia.competencia}.`;

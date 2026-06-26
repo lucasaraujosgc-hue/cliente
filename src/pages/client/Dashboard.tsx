@@ -355,10 +355,8 @@ export function ClientDashboard() {
   );
   
   const sitFisDoc = data.documents.find((d: any) => (d.category === 'SITFIS_RECEITA' || d.category === 'sitfis' || d.category?.toUpperCase() === 'SITFIS') && d.extractedData);
-  const hasPendingSitFis = sitFisDoc?.extractedData?.some((d: any) => {
-    const st = String(d.status).toUpperCase();
-    return st.includes("PEND") || st.includes("IRREGULAR") || (st !== "REGULAR" && st !== "REGULARIZADO");
-  });
+  const sitFisItems = Array.isArray(sitFisDoc?.extractedData) ? sitFisDoc.extractedData : [];
+  const hasPendingSitFis = sitFisItems.length > 0 && sitFisItems.some((d: any) => d.type || (d.status && String(d.status).toUpperCase() !== "REGULAR"));
 
   // Filter pending ones explicitly
   const pendingDocs = allCurrentDocs.filter((d: any) => d.status !== "paid");
@@ -710,11 +708,11 @@ export function ClientDashboard() {
             <h3 className="text-lg font-extrabold text-slate-900 dark:text-white flex items-center gap-1.5">
               {hasPendingSitFis ? (
                 <span className="text-red-500 dark:text-red-400 flex items-center gap-1 cursor-pointer underline decoration-dotted">
-                  {sitFisDoc?.extractedData?.find((d: any) => d.orgao === 'RFB')?.status || "PENDENTE"} 🔴
+                  PENDÊNCIAS 🔴
                 </span>
               ) : (
                 <span className="text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
-                  {sitFisDoc?.extractedData?.find((d: any) => d.orgao === 'RFB')?.status || "REGULAR"} 🟢
+                  REGULAR 🟢
                 </span>
               )}
             </h3>
@@ -868,26 +866,36 @@ export function ClientDashboard() {
              </div>
              
              <div className="p-6 space-y-4">
-                {!sitFisDoc || !sitFisDoc.extractedData ? (
+                {!sitFisDoc || !sitFisDoc.extractedData || sitFisDoc.extractedData.length === 0 ? (
                   <div className="py-12 text-center rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
                     <CheckCircle className="w-10 h-10 text-emerald-400 dark:text-emerald-500/50 mx-auto mb-2" />
-                    <h4 className="font-bold text-slate-800 dark:text-slate-300">Nenhum Relatório Recente</h4>
-                    <p className="text-xs text-slate-500 mt-1">Ainda não recebemos o relatório de situação fiscal deste mês.</p>
+                    <h4 className="font-bold text-slate-800 dark:text-slate-300">Situação Regular</h4>
+                    <p className="text-xs text-slate-500 mt-1">Nenhuma pendência encontrada no último relatório de situação fiscal.</p>
                   </div>
                 ) : (
                   sitFisDoc.extractedData.map((item: any, idx: number) => {
-                     const isPending = String(item.status).toUpperCase() === "PENDENTE";
+                     const isPending = item.type || String(item.status).toUpperCase() === "PENDENTE";
                      return (
                         <div key={idx} className="border border-slate-100 dark:border-slate-800 rounded-xl p-4 bg-slate-50/50 dark:bg-slate-800/20">
                            <div className="flex items-center justify-between mb-2">
                               <h4 className="font-bold text-slate-700 dark:text-slate-300 flex items-center gap-2">
                                  {isPending ? <AlertCircle className="w-4 h-4 text-red-500" /> : <CheckCircle className="w-4 h-4 text-emerald-500" />}
-                                 {item.orgao || "Situação"}
+                                 {item.type || item.orgao || "Situação"}
                               </h4>
                               <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${isPending ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>
                                  {item.status || (isPending ? "Pendente" : "Regular")}
                               </span>
                            </div>
+                           {item.value && (
+                             <p className="text-lg font-bold text-slate-800 dark:text-slate-200 mt-1">
+                               R$ {item.value}
+                             </p>
+                           )}
+                           {item.period && (
+                             <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
+                               Competência/Período: <span className="font-medium">{item.period}</span>
+                             </p>
+                           )}
                            {item.descricao && (
                              <p className="text-sm text-slate-600 dark:text-slate-400 mt-2">
                                {item.descricao}
