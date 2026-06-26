@@ -210,6 +210,7 @@ export function PixScannerButton({ docId, fileUrl }: PixScannerButtonProps) {
             const page = await pdf.getPage(i);
 
             const crops = [
+              { scale: 4.0, x1: 0.02, y1: 0.08, x2: 0.40, y2: 0.45 }, // Banco Inter / Standard Top-Left QR Code (Wide Area)
               { scale: 4.0, x1: 0.03, y1: 0.13, x2: 0.25, y2: 0.38 }, // Banco Inter precise area (x: 3-25%, y: 13-38%)
               { scale: 4.0, x1: 0.05, y1: 0.21, x2: 0.32, y2: 0.43 }, // Inter 1
               { scale: 4.0, x1: 0.06, y1: 0.23, x2: 0.31, y2: 0.41 }, // Inter 2
@@ -265,11 +266,10 @@ export function PixScannerButton({ docId, fileUrl }: PixScannerButtonProps) {
 
               if (code && code.data) {
                 const qrText = code.data.trim();
+                const upperText = qrText.toUpperCase();
                 if (
-                  qrText.startsWith("000201") &&
-                  qrText.toUpperCase().includes("BR.GOV.BCB.PIX") &&
-                  qrText.toUpperCase().includes("5802BR") &&
-                  /6304[A-Fa-f0-9]{4}$/i.test(qrText)
+                  upperText.startsWith("000201") &&
+                  upperText.includes("BR.GOV.BCB.PIX")
                 ) {
                   foundCode = qrText;
                   break;
