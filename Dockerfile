@@ -22,6 +22,8 @@ WORKDIR /app
 # Set node env to production
 ENV NODE_ENV=production
 
+RUN apk add --no-cache poppler-utils font-noto
+
 # Copy necessary files from builder
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/package.json ./
