@@ -130,27 +130,15 @@ export function ClientOverdue() {
   return (
     <div className="space-y-8 max-w-5xl mx-auto px-4 sm:px-6 pb-16 animate-in fade-in slide-in-from-bottom-3 duration-550">
       
-      {/* HEADER CARD PREMIUM */}
-      <div className="relative overflow-hidden bg-gradient-to-r from-rose-900/95 via-red-950/95 to-slate-900 text-white p-6 sm:p-8 rounded-3xl shadow-lg border border-red-500/10 flex flex-col sm:flex-row sm:items-center justify-between gap-6">
-        <div className="absolute top-0 right-0 p-24 bg-white/5 rounded-full translate-x-16 -translate-y-16 pointer-events-none"></div>
-        <div className="z-10 space-y-2">
-          <div className="flex items-center gap-2">
-            <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider bg-rose-500/20 text-rose-350 rounded-full border border-rose-500/35 animate-pulse">
-              Ação Requerida
-            </span>
-          </div>
-          <h1 className="text-2xl sm:text-3xl font-black tracking-tight flex items-center gap-2.5">
-            <AlertCircle className="w-7 h-7 text-rose-400 shrink-0" />
-            Guias em Atraso
-          </h1>
-          <p className="text-xs sm:text-sm text-rose-200 max-w-xl leading-relaxed">
-            Evite multas acumuladas. Recalcule o valor dos seus impostos vencidos de forma automática utilizando a integração oficial do <strong className="text-white">Integra Contador</strong>.
-          </p>
-        </div>
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-slate-900 dark:text-white flex items-center gap-2.5">
+          <AlertCircle className="w-7 h-7 text-rose-500 shrink-0" />
+          Guias em Atraso
+        </h1>
         <button
           onClick={loadData}
           disabled={isRefreshing}
-          className="z-10 self-start sm:self-center px-4 py-2.5 bg-white/10 hover:bg-white/20 active:scale-95 border border-white/10 hover:border-white/20 text-white rounded-xl text-xs font-black transition-all shadow-sm flex items-center gap-2 disabled:opacity-50"
+          className="w-full sm:w-auto px-4 py-2.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-95 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-black transition-all shadow-sm flex items-center justify-center gap-2 disabled:opacity-50"
         >
           <RotateCw className={`w-3.5 h-3.5 ${isRefreshing ? "animate-spin" : ""}`} />
           {isRefreshing ? "Sincronizando..." : "Sincronizar"}

@@ -11,6 +11,13 @@ export const clients = pgTable('clients', {
   firstAccessDone: boolean('first_access_done').default(false),
   integrationHash: text('integration_hash').unique(),
   accountantCategory: text('accountant_category'),
+  notificationPreferences: json('notification_preferences').default({
+    receives_all: true,
+    recurrent: true,
+    before_due: true,
+    on_due: true,
+    on_new_file: true
+  }),
 });
 
 export const documents = pgTable('documents', {

@@ -21,9 +21,10 @@ import {
   ChevronRight,
   Eye,
   Send,
-  DollarSign
+  DollarSign,
+  Settings
 } from "lucide-react";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Legend } from "recharts";
 import { format, parse, subMonths, isBefore, isAfter, isEqual, parseISO, differenceInDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -33,18 +34,8 @@ import { GuiaAtualizarButton } from "../../components/GuiaAtualizarButton";
 
 export function ClientDashboard() {
   const location = useLocation();
-  const [activeDashboardTab, setActiveDashboardTab] = useState<'geral' | 'situacao'>('geral');
+  const navigate = useNavigate();
   
-  useEffect(() => {
-    const params = new URLSearchParams(location.search);
-    const tab = params.get('tab');
-    if (tab === 'situacao') {
-      setActiveDashboardTab('situacao');
-    } else {
-      setActiveDashboardTab('geral');
-    }
-  }, [location.search]);
-
   const [data, setData] = useState<any>(null);
   const [selectedCompetence, setSelectedCompetence] = useState(format(subMonths(new Date(), 1), "MM/yyyy"));
   const [isUploading, setIsUploading] = useState(false);
@@ -63,6 +54,15 @@ export function ClientDashboard() {
   const [billingForm, setBillingForm] = useState({ servicesRevenue: 0, salesRevenue: 0, totalIncomes: 0, servicesTaken: 0 });
   const [showBillingForm, setShowBillingForm] = useState(false);
 
+  const [showPrefsModal, setShowPrefsModal] = useState(false);
+  const [prefsForm, setPrefsForm] = useState({
+    receives_all: true,
+    recurrent: true,
+    before_due: true,
+    on_due: true,
+    on_new_file: true
+  });
+
   const loadData = async () => {
     setIsRefreshing(true);
     const token = localStorage.getItem("clientToken") || sessionStorage.getItem("clientToken");
@@ -72,6 +72,9 @@ export function ClientDashboard() {
       });
       const d = await response.json();
       setData(d);
+      if (d.client?.notificationPreferences) {
+        setPrefsForm(d.client.notificationPreferences);
+      }
       const entry = d.billing.find((b: any) => b.month === selectedCompetence);
       if (entry) {
         setBillingForm({ 
@@ -87,6 +90,26 @@ export function ClientDashboard() {
       console.error("Error loading dashboard data", e);
     } finally {
       setIsRefreshing(false);
+    }
+  };
+
+  const handleSavePrefs = async () => {
+    try {
+      const token = localStorage.getItem("clientToken") || sessionStorage.getItem("clientToken");
+      const res = await fetch("/api/client/preferences", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ notificationPreferences: prefsForm })
+      });
+      if (res.ok) {
+        setShowPrefsModal(false);
+        loadData();
+      }
+    } catch (e) {
+      console.error(e);
     }
   };
 
@@ -368,6 +391,18 @@ export function ClientDashboard() {
   const sitFisItems = Array.isArray(sitFisDoc?.extractedData) ? sitFisDoc.extractedData : [];
   const hasPendingSitFis = sitFisItems.length > 0 && sitFisItems.some((d: any) => d.type || (d.status && String(d.status).toUpperCase() !== "REGULAR"));
 
+  // Calculate global overdue documents (across all competencies)
+  const allOverdueDocs = data.documents.filter((d: any) => {
+    if (d.status === "paid" || d.category === "bank_statement" || d.category === "SITFIS_RECEITA" || d.category?.toLowerCase() === "sitfis") return false;
+    const dueInfo = getDocDueStatus(d);
+    return dueInfo.isOverdue;
+  });
+  
+  const totalOverdueValue = allOverdueDocs.reduce((sum: number, doc: any) => {
+    const val = doc.extractedData?.extractedValue;
+    return sum + (typeof val === 'number' ? val : 0);
+  }, 0);
+
   // Filter pending ones explicitly
   const pendingDocs = allCurrentDocs.filter((d: any) => d.status !== "paid");
 
@@ -447,7 +482,15 @@ export function ClientDashboard() {
           </p>
         </div>
         
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3 mt-2 sm:mt-0">
+          <button
+            onClick={() => setShowPrefsModal(true)}
+            className="p-2.5 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 shadow-sm active:scale-95 transition-all text-xs flex items-center justify-center h-10 w-10"
+            title="Configurar Notificações"
+          >
+            <Bell className="w-5 h-5" />
+          </button>
+          
           <div className="flex items-center bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden h-10 w-[200px]">
             <button 
               onClick={handlePrevCompetence}
@@ -481,9 +524,8 @@ export function ClientDashboard() {
         </div>
       </header>
 
-      {activeDashboardTab === 'geral' && (
-        <div className="space-y-6 mt-6">
-          {/* SATELLITE COMMUNICATIONS FROM ACCOUNTANT */}
+      <div className="space-y-6 mt-6">
+        {/* SATELLITE COMMUNICATIONS FROM ACCOUNTANT */}
           {data.messages && data.messages.filter((m: any) => !m.read && m.direction !== 'client_to_accountant').map((msg: any) => (
             <div key={msg.id} className="bg-indigo-50/70 dark:bg-slate-800/40 backdrop-blur-md border border-indigo-100/40 dark:border-slate-700/60 rounded-3xl p-4 flex items-start shadow-xs">
               <Bell className="text-indigo-500 dark:text-indigo-400 w-5 h-5 mt-0.5 mr-3 shrink-0" />
@@ -716,28 +758,30 @@ export function ClientDashboard() {
           </div>
         </div>
 
-        {/* Stat 3: Situação Fiscal */}
+        {/* Stat 3: Guias em Atraso Geral */}
         <div 
-          className={`bg-white dark:bg-slate-800/90 border border-slate-100 dark:border-slate-800 p-5 rounded-3xl shadow-sm transition-shadow flex items-center justify-between ${hasPendingSitFis ? 'cursor-pointer hover:shadow-md ring-2 ring-red-500/20' : 'hover:shadow-md cursor-pointer'}`}
-          onClick={() => setActiveDashboardTab('situacao')}
+          className={`bg-white dark:bg-slate-800/90 border border-slate-100 dark:border-slate-800 p-5 rounded-3xl shadow-sm transition-shadow flex items-center justify-between ${allOverdueDocs.length > 0 ? 'cursor-pointer hover:shadow-md ring-2 ring-rose-500/20' : 'hover:shadow-md cursor-pointer'}`}
+          onClick={() => navigate('/client/overdue')}
         >
           <div className="space-y-1">
-            <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">SITUAÇÃO PERANTE À RECEITA</p>
+            <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">GUIAS EM ATRASO GERAL</p>
             <h3 className="text-lg font-extrabold text-slate-900 dark:text-white flex items-center gap-1.5">
-              {hasPendingSitFis ? (
-                <span className="text-red-500 dark:text-red-400 flex items-center gap-1 cursor-pointer underline decoration-dotted">
-                  PENDÊNCIAS 🔴
+              {allOverdueDocs.length > 0 ? (
+                <span className="text-rose-500 dark:text-rose-400 flex items-center gap-1 cursor-pointer underline decoration-dotted">
+                  {allOverdueDocs.length} atrasadas
                 </span>
               ) : (
                 <span className="text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
-                  REGULAR 🟢
+                  Nenhuma 🟢
                 </span>
               )}
             </h3>
-            <p className="text-[10px] text-slate-500">Cadastro de CNPJ e regularidade</p>
+            <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400">
+              Total: {totalOverdueValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+            </p>
           </div>
-          <div className={`p-3 rounded-2xl ${hasPendingSitFis ? "bg-red-500/10 text-red-500" : "bg-emerald-500/10 text-emerald-500"}`}>
-            {hasPendingSitFis ? <AlertCircle className="w-5 h-5 animate-pulse" /> : <CheckCircle className="w-5 h-5" />}
+          <div className={`p-3 rounded-2xl ${allOverdueDocs.length > 0 ? "bg-rose-500/10 text-rose-500" : "bg-emerald-500/10 text-emerald-500"}`}>
+            {allOverdueDocs.length > 0 ? <AlertCircle className="w-5 h-5 animate-pulse" /> : <CheckCircle className="w-5 h-5" />}
           </div>
         </div>
       </div>
@@ -869,75 +913,65 @@ export function ClientDashboard() {
 
       </div>
       </div>
-      )}
 
-      {activeDashboardTab === 'situacao' && (
-        <div className="mt-6">
-          <div className="bg-white dark:bg-slate-900 w-full rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 flex flex-col">
-             <div className="flex items-center justify-between p-5 border-b border-slate-100 dark:border-slate-800">
-                <div>
-                   <h2 className="text-lg font-bold text-slate-800 dark:text-white flex items-center gap-2">
-                     <AlertCircle className="w-5 h-5 text-indigo-500" /> Saúde Fiscal Detalhada
-                   </h2>
-                   <p className="text-xs text-slate-500 uppercase mt-1">{data.client.companyName} ({data.client.cnpj})</p>
+      {/* MODAL CONFIG NOTIFICAÇÕES */}
+      {showPrefsModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 w-full max-w-sm shadow-2xl border border-slate-200 dark:border-slate-800 animate-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-lg font-black text-slate-900 dark:text-white flex items-center gap-2">
+                <Settings className="w-5 h-5 text-indigo-500" /> Preferências
+              </h3>
+              <button 
+                onClick={() => setShowPrefsModal(false)}
+                className="p-2 bg-slate-100 dark:bg-slate-800 text-slate-500 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            
+            <div className="space-y-4">
+              <label className="flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+                <input 
+                  type="checkbox" 
+                  checked={prefsForm.receives_all} 
+                  onChange={e => setPrefsForm({...prefsForm, receives_all: e.target.checked})}
+                  className="w-4 h-4 text-indigo-600 rounded border-slate-300 dark:border-slate-700 focus:ring-indigo-600 focus:ring-2"
+                />
+                <div className="flex-1">
+                  <p className="text-sm font-bold text-slate-800 dark:text-slate-200 leading-none mb-1">Receber Notificações</p>
+                  <p className="text-[10px] text-slate-500">Ativa o recebimento de avisos do contador.</p>
                 </div>
-             </div>
-             
-             <div className="p-6 space-y-4">
-                {!sitFisDoc || !sitFisDoc.extractedData || sitFisDoc.extractedData.length === 0 ? (
-                  <div className="py-12 text-center rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
-                    <CheckCircle className="w-10 h-10 text-emerald-400 dark:text-emerald-500/50 mx-auto mb-2" />
-                    <h4 className="font-bold text-slate-800 dark:text-slate-300">Situação Regular</h4>
-                    <p className="text-xs text-slate-500 mt-1">Nenhuma pendência encontrada no último relatório de situação fiscal.</p>
-                  </div>
-                ) : (
-                  sitFisDoc.extractedData.map((item: any, idx: number) => {
-                     const isPending = item.type || String(item.status).toUpperCase() === "PENDENTE";
-                     return (
-                        <div key={idx} className="border border-slate-100 dark:border-slate-800 rounded-xl p-4 bg-slate-50/50 dark:bg-slate-800/20">
-                           <div className="flex items-center justify-between mb-2">
-                              <h4 className="font-bold text-slate-700 dark:text-slate-300 flex items-center gap-2">
-                                 {isPending ? <AlertCircle className="w-4 h-4 text-red-500" /> : <CheckCircle className="w-4 h-4 text-emerald-500" />}
-                                 {item.type || item.orgao || "Situação"}
-                              </h4>
-                              <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${isPending ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>
-                                 {item.status || (isPending ? "Pendente" : "Regular")}
-                              </span>
-                           </div>
-                           {item.value && (
-                             <p className="text-lg font-bold text-slate-800 dark:text-slate-200 mt-1">
-                               R$ {item.value}
-                             </p>
-                           )}
-                           {item.period && (
-                             <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
-                               Competência/Período: <span className="font-medium">{item.period}</span>
-                             </p>
-                           )}
-                           {item.descricao && (
-                             <p className="text-sm text-slate-600 dark:text-slate-400 mt-2">
-                               {item.descricao}
-                             </p>
-                           )}
-                           {item.competencias && (
-                             <div className="mt-3 flex flex-wrap gap-2">
-                               {item.competencias.map((comp: string, i: number) => (
-                                 <span key={i} className="px-2 py-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-medium text-slate-500">
-                                   {comp}
-                                 </span>
-                               ))}
-                             </div>
-                           )}
-                        </div>
-                     );
-                  })
-                )}
-                {sitFisDoc && (
-                  <div className="text-right">
-                    <p className="text-[10px] text-slate-400 mt-2">Atualizado em: {format(parseISO(sitFisDoc.createdAt), "dd/MM/yyyy HH:mm:ss")}</p>
-                  </div>
-                )}
-             </div>
+              </label>
+
+              {prefsForm.receives_all && (
+                <div className="space-y-3 pl-2 border-l-2 border-slate-100 dark:border-slate-800">
+                  <label className="flex items-center gap-3 p-2 cursor-pointer group">
+                    <input type="checkbox" checked={prefsForm.recurrent} onChange={e => setPrefsForm({...prefsForm, recurrent: e.target.checked})} className="w-4 h-4 rounded text-indigo-600 border-slate-300 dark:border-slate-700" />
+                    <span className="text-xs font-semibold text-slate-600 dark:text-slate-400 group-hover:text-slate-800 dark:group-hover:text-slate-200 transition-colors">Lembretes Mensais</span>
+                  </label>
+                  <label className="flex items-center gap-3 p-2 cursor-pointer group">
+                    <input type="checkbox" checked={prefsForm.before_due} onChange={e => setPrefsForm({...prefsForm, before_due: e.target.checked})} className="w-4 h-4 rounded text-indigo-600 border-slate-300 dark:border-slate-700" />
+                    <span className="text-xs font-semibold text-slate-600 dark:text-slate-400 group-hover:text-slate-800 dark:group-hover:text-slate-200 transition-colors">Avisar dias antes do vencimento</span>
+                  </label>
+                  <label className="flex items-center gap-3 p-2 cursor-pointer group">
+                    <input type="checkbox" checked={prefsForm.on_due} onChange={e => setPrefsForm({...prefsForm, on_due: e.target.checked})} className="w-4 h-4 rounded text-indigo-600 border-slate-300 dark:border-slate-700" />
+                    <span className="text-xs font-semibold text-slate-600 dark:text-slate-400 group-hover:text-slate-800 dark:group-hover:text-slate-200 transition-colors">Avisar no dia do vencimento</span>
+                  </label>
+                  <label className="flex items-center gap-3 p-2 cursor-pointer group">
+                    <input type="checkbox" checked={prefsForm.on_new_file} onChange={e => setPrefsForm({...prefsForm, on_new_file: e.target.checked})} className="w-4 h-4 rounded text-indigo-600 border-slate-300 dark:border-slate-700" />
+                    <span className="text-xs font-semibold text-slate-600 dark:text-slate-400 group-hover:text-slate-800 dark:group-hover:text-slate-200 transition-colors">Quando gerar nova guia</span>
+                  </label>
+                </div>
+              )}
+            </div>
+            
+            <button
+              onClick={handleSavePrefs}
+              className="mt-6 w-full py-3 px-4 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-sm transition-colors"
+            >
+              Salvar Preferências
+            </button>
           </div>
         </div>
       )}

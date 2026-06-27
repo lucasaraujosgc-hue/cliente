@@ -1265,6 +1265,21 @@ export function setupRoutes(app: Express) {
     }
   });
 
+  app.put("/api/client/preferences", verifyClientAuth, async (req, res) => {
+    try {
+      const clientId = (req as any).user.clientId;
+      const { notificationPreferences } = req.body;
+
+      await db.update(clients)
+        .set({ notificationPreferences })
+        .where(eq(clients.id, clientId));
+
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   // -------------------------------------------------------------
   // ACCOUNTANT VIEW ENDPOINTS
   // -------------------------------------------------------------
@@ -1638,6 +1653,53 @@ export function setupRoutes(app: Express) {
         document: { ...newDoc, createdAt: newDoc.createdAt.toISOString() },
       });
     },
+  );
+
+  app.put(
+    "/api/accountant/document/:id",
+    verifyAccountantAuth,
+    upload.single("file"),
+    async (req, res) => {
+      try {
+        const docId = parseInt(req.params.id);
+        const { title, category, dueDate, competence, status, valor } = req.body;
+
+        const docList = await db.select().from(documents).where(eq(documents.id, docId));
+        if (docList.length === 0) {
+          return res.status(404).json({ error: "Documento não encontrado" });
+        }
+        
+        const currentDoc = docList[0];
+        
+        let extractedData = currentDoc.extractedData as any || {};
+        if (valor !== undefined && valor !== "") {
+           extractedData = { ...extractedData, extractedValue: parseFloat(valor) };
+        }
+
+        const updateData: any = {
+          title: title || currentDoc.title,
+          category: category || currentDoc.category,
+          dueDate: dueDate || currentDoc.dueDate,
+          competence: competence || currentDoc.competence,
+          status: status || currentDoc.status,
+          extractedData
+        };
+
+        if (req.file) {
+          updateData.fileUrl = `/uploads/${req.file.filename}`;
+        }
+
+        const [updated] = await db
+          .update(documents)
+          .set(updateData)
+          .where(eq(documents.id, docId))
+          .returning();
+
+        res.json({ success: true, document: updated });
+      } catch (err: any) {
+        res.status(500).json({ error: err.message });
+      }
+    }
   );
 
   app.post(

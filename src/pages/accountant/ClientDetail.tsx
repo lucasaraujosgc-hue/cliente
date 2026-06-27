@@ -11,6 +11,16 @@ export function ClientDetail() {
 
   const [editingMsg, setEditingMsg] = useState<any>(null);
 
+  const [editingDocId, setEditingDocId] = useState<string | null>(null);
+  const [editDocForm, setEditDocForm] = useState({
+    title: "",
+    category: "",
+    dueDate: "",
+    status: "",
+    valor: "",
+    file: null as File | null
+  });
+
   const [billingForm, setBillingForm] = useState({ 
     month: "", 
     servicesRevenue: 0, 
@@ -185,6 +195,40 @@ export function ClientDetail() {
       body: JSON.stringify({ status: "ok" })
     });
     loadData();
+  };
+
+  const handleEditDocSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingDocId) return;
+
+    const formData = new FormData();
+    if (editDocForm.title) formData.append("title", editDocForm.title);
+    if (editDocForm.category) formData.append("category", editDocForm.category);
+    if (editDocForm.dueDate) formData.append("dueDate", editDocForm.dueDate);
+    if (editDocForm.status) formData.append("status", editDocForm.status);
+    if (editDocForm.valor) formData.append("valor", editDocForm.valor);
+    if (editDocForm.file) formData.append("file", editDocForm.file);
+
+    try {
+      const res = await fetch(`/api/accountant/document/${editingDocId}`, {
+        method: "PUT",
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem("accountantToken")}`,
+        },
+        body: formData,
+      });
+
+      if (res.ok) {
+        setEditingDocId(null);
+        loadData();
+      } else {
+        const d = await res.json();
+        alert(d.error || "Erro ao atualizar documento");
+      }
+    } catch (e) {
+      console.error(e);
+      alert("Erro na requisição.");
+    }
   };
 
   if (!data) return null;
@@ -469,18 +513,45 @@ export function ClientDetail() {
                 <div className={`w-10 h-10 rounded-full flex items-center justify-center mr-4 ${doc.uploadedBy === 'client' ? 'bg-amber-50 text-amber-600' : 'bg-blue-50 text-blue-600'}`}>
                   {doc.uploadedBy === 'client' ? <UploadCloud className="w-5 h-5" /> : <MessageSquare className="w-5 h-5" />}
                 </div>
-                <div>
+                <div className="flex-1">
                   <h4 className="text-sm font-medium text-slate-900">{doc.title} {doc.competence && `(Comp: ${doc.competence})`}</h4>
-                  <div className="text-xs text-slate-500 mt-1 flex gap-2 items-center">
+                  <div className="text-xs text-slate-500 mt-1 flex flex-wrap gap-2 items-center">
                      <span className="font-medium text-slate-700">Origem: {doc.uploadedBy === 'client' ? 'Cliente' : 'Contador'}</span>
                      <span>•</span>
                      <span className={doc.status === 'ok' || doc.status === 'viewed' ? 'text-emerald-500 font-semibold' : ''}>Status: {doc.status}</span>
+                     <span>•</span>
+                     <span>Cat: {doc.category}</span>
+                     <span>•</span>
+                     {doc.dueDate && <span>Vence: {doc.dueDate.includes('T') ? doc.dueDate.split('T')[0] : doc.dueDate}</span>}
+                     {doc.extractedData?.extractedValue && (
+                       <>
+                         <span>•</span>
+                         <span className="text-slate-700 font-semibold">Valor: {doc.extractedData.extractedValue.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</span>
+                       </>
+                     )}
                      <span>•</span>
                      <span>{format(parseISO(doc.createdAt), "dd MMM, yyyy", {locale: ptBR})}</span>
                   </div>
                 </div>
               </div>
-              <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+              <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity ml-4">
+                 <button 
+                    onClick={() => {
+                      setEditingDocId(doc.id);
+                      setEditDocForm({
+                         title: doc.title || "",
+                         category: doc.category || "",
+                         dueDate: doc.dueDate ? doc.dueDate.split('T')[0] : "",
+                         status: doc.status || "",
+                         valor: doc.extractedData?.extractedValue || "",
+                         file: null
+                      });
+                    }} 
+                    title="Editar Documento" 
+                    className="p-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100"
+                 >
+                    <Edit3 className="w-4 h-4" />
+                 </button>
                  {doc.fileUrl && (
                     <a href={getAuthenticatedFileUrl(doc.fileUrl)} target="_blank" download rel="noreferrer" title="Baixar" className="p-2 bg-slate-100 text-slate-600 rounded-lg hover:bg-slate-200">
                        <Download className="w-4 h-4" />
@@ -536,6 +607,115 @@ export function ClientDetail() {
            )}
         </div>
       </div>
+
+      {editingDocId && (
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-lg shadow-2xl overflow-y-auto max-h-[90vh]">
+            <h2 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
+              <Edit3 className="w-5 h-5 text-blue-500" /> Editar Documento
+            </h2>
+            <form onSubmit={handleEditDocSubmit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 mb-1">Título</label>
+                <input 
+                  required 
+                  type="text" 
+                  value={editDocForm.title} 
+                  onChange={e => setEditDocForm({ ...editDocForm, title: e.target.value })} 
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div className="flex gap-4">
+                <div className="flex-1">
+                  <label className="block text-xs font-semibold text-slate-500 mb-1">Categoria</label>
+                  <select 
+                    required 
+                    value={editDocForm.category} 
+                    onChange={e => setEditDocForm({ ...editDocForm, category: e.target.value })} 
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">Selecione...</option>
+                    <option value="das">Guia Simples (DAS)</option>
+                    <option value="iss">Guia ISS</option>
+                    <option value="inss">Guia INSS / Darf</option>
+                    <option value="irpj">Guia IRPJ</option>
+                    <option value="fgts">FGTS</option>
+                    <option value="folha">Folha / Holerites</option>
+                    <option value="alvara">Alvará / Licença</option>
+                    <option value="imposto_renda">IRPF (Imposto de Renda)</option>
+                    <option value="balanco">Balanço / DRE</option>
+                    <option value="extrato">Extrato Bancário</option>
+                    <option value="sitfis">Situação Fiscal</option>
+                    <option value="other">Outros Documentos</option>
+                  </select>
+                </div>
+                <div className="flex-1">
+                  <label className="block text-xs font-semibold text-slate-500 mb-1">Vencimento</label>
+                  <input 
+                    type="date" 
+                    value={editDocForm.dueDate} 
+                    onChange={e => setEditDocForm({ ...editDocForm, dueDate: e.target.value })} 
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+              <div className="flex gap-4">
+                <div className="flex-1">
+                  <label className="block text-xs font-semibold text-slate-500 mb-1">Status</label>
+                  <select 
+                    required 
+                    value={editDocForm.status} 
+                    onChange={e => setEditDocForm({ ...editDocForm, status: e.target.value })} 
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="new">Novo / Pendente</option>
+                    <option value="viewed">Visualizado</option>
+                    <option value="ok">Recebido (Cliente)</option>
+                    <option value="paid">Pago</option>
+                  </select>
+                </div>
+                <div className="flex-1">
+                  <label className="block text-xs font-semibold text-slate-500 mb-1">Valor (Opcional)</label>
+                  <input 
+                    type="number"
+                    step="0.01"
+                    value={editDocForm.valor} 
+                    onChange={e => setEditDocForm({ ...editDocForm, valor: e.target.value })} 
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="Ex: 150.00"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 mb-1">Substituir Arquivo (Opcional)</label>
+                <input 
+                  type="file" 
+                  onChange={e => {
+                    const f = e.target.files ? e.target.files[0] : null;
+                    setEditDocForm({ ...editDocForm, file: f });
+                  }}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div className="pt-4 flex justify-end gap-3">
+                <button 
+                  type="button" 
+                  onClick={() => setEditingDocId(null)}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-sm rounded-xl transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button 
+                  type="submit"
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm rounded-xl transition-colors"
+                >
+                  Salvar Alterações
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
