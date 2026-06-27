@@ -69,6 +69,9 @@ export async function initDb() {
     await client.query(`ALTER TABLE "scheduled_notifications" ADD COLUMN IF NOT EXISTS "schedule_time" text;`);
     await client.query(`ALTER TABLE "clients" ADD COLUMN IF NOT EXISTS "notification_preferences" json DEFAULT '{"receives_all":true,"recurrent":true,"before_due":true,"on_due":true,"on_new_file":true}'::json;`);
 
+    await client.query(`ALTER TABLE "clients" ADD COLUMN IF NOT EXISTS "reset_token" text;`);
+    await client.query(`ALTER TABLE "clients" ADD COLUMN IF NOT EXISTS "reset_token_expires" text;`);
+    
     await client.query(`
       CREATE TABLE IF NOT EXISTS "subscriptions" (
         "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),

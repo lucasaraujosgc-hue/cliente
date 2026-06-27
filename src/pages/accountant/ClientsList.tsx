@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Users, Search, ChevronRight, Plus, X, Edit, Trash2, Megaphone, CheckSquare, Square } from "lucide-react";
+import { Users, Search, ChevronRight, Plus, X, Edit, Trash2, Megaphone, CheckSquare, Square, Upload } from "lucide-react";
+import * as XLSX from "xlsx";
 
 export function ClientsList() {
   const [clients, setClients] = useState<any[]>([]);
@@ -18,6 +19,7 @@ export function ClientsList() {
   const [muralSelectedIds, setMuralSelectedIds] = useState<string[]>([]);
   const [muralMessage, setMuralMessage] = useState("");
   const [isSendingMural, setIsSendingMural] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
 
   const loadClients = () => {
     fetch("/api/accountant/clients", {
@@ -30,6 +32,63 @@ export function ClientsList() {
   useEffect(() => {
     loadClients();
   }, []);
+
+  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsImporting(true);
+    try {
+      const data = await file.arrayBuffer();
+      const workbook = XLSX.read(data);
+      const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(worksheet) as any[];
+
+      // Expected columns: CNPJ, Nome, Categorias
+      let successCount = 0;
+      let errCount = 0;
+
+      for (const row of rows) {
+        let cnpj = row['CNPJ'] || row['cnpj'] || row['Cnpj'];
+        const name = row['Nome'] || row['nome'] || row['Razão Social'] || row['razao social'];
+        const accountantCategory = row['Categorias'] || row['categorias'] || row['Categoria'] || row['categoria'] || "";
+
+        if (cnpj && name) {
+           cnpj = String(cnpj).replace(/\D/g, "");
+           try {
+              const res = await fetch("/api/accountant/clients", {
+                method: "POST",
+                headers: { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("accountantToken")}` },
+                body: JSON.stringify({ cnpj, name, accountantCategory, integrationHash: "" })
+              });
+              if (res.ok) successCount++;
+              else errCount++;
+           } catch {
+              errCount++;
+           }
+        } else {
+           errCount++;
+        }
+      }
+
+      alert(`Importação concluída. Sucessos: ${successCount}. Falhas (ou incompletos): ${errCount}.`);
+      loadClients();
+    } catch (err: any) {
+      alert("Erro ao importar planilha: " + err.message);
+    }
+    setIsImporting(false);
+    if (e.target) e.target.value = "";
+  };
+
+  const handleDownloadTemplate = () => {
+     const worksheet = XLSX.utils.json_to_sheet([
+       { "CNPJ": "12.345.678/0001-99", "Nome": "Empresa XPTO Ltda", "Categorias": "Lucro Presumido, TI" },
+       { "CNPJ": "98.765.432/0001-11", "Nome": "Nova Startup", "Categorias": "Simples Nacional" },
+     ]);
+     const workbook = XLSX.utils.book_new();
+     XLSX.utils.book_append_sheet(workbook, worksheet, "Clientes");
+     XLSX.writeFile(workbook, "exemplo_clientes.xlsx");
+  };
 
   const handleSaveClient = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -118,11 +177,15 @@ export function ClientsList() {
   };
 
   // Extract unique categories
-  const categories = Array.from(new Set(clients.map(c => c.accountantCategory).filter(Boolean)));
+  const categories = Array.from(new Set(
+    clients.map(c => c.accountantCategory).filter(Boolean)
+      .flatMap(cats => cats.split(",").map((c: string) => c.trim()).filter(Boolean))
+  ));
 
   const filtered = clients.filter(c => {
     const matchSearch = c.name.toLowerCase().includes(search.toLowerCase()) || c.cnpj.includes(search);
-    const matchCategory = categoryFilter === "all" || c.accountantCategory === categoryFilter;
+    const clientCats = c.accountantCategory ? c.accountantCategory.split(",").map((cat: string) => cat.trim()) : [];
+    const matchCategory = categoryFilter === "all" || clientCats.includes(categoryFilter);
     return matchSearch && matchCategory;
   });
 
@@ -133,10 +196,29 @@ export function ClientsList() {
           <h1 className="text-xl font-bold tracking-tight text-slate-900">Clientes</h1>
           <p className="text-xs text-slate-500">Gerencie a carteira de clientes do escritório.</p>
         </div>
-        <div className="flex gap-3">
+        <div className="flex gap-3 relative">
           <button onClick={() => setShowMuralModal(true)} className="bg-indigo-50 text-indigo-600 px-4 py-2 rounded-xl text-sm font-bold flex items-center hover:bg-indigo-100 transition-colors">
             <Megaphone className="w-4 h-4 mr-2" /> Mural de Recados
           </button>
+          
+          <div className="flex flex-col items-center justify-center relative">
+            <div className="relative">
+               <input 
+                 type="file" 
+                 accept=".xlsx, .xls, .csv" 
+                 className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                 onChange={handleImport}
+                 disabled={isImporting}
+               />
+               <button className="bg-slate-100 text-slate-700 px-4 py-2 rounded-xl text-sm font-bold flex items-center hover:bg-slate-200 transition-colors h-full disabled:opacity-50" disabled={isImporting}>
+                 <Upload className="w-4 h-4 mr-2" /> {isImporting ? "Importando..." : "Importar .xlsx"}
+               </button>
+            </div>
+            <button onClick={handleDownloadTemplate} className="text-[10px] text-slate-500 hover:text-slate-700 underline absolute -bottom-5 whitespace-nowrap" title="Baixar planilha de exemplo">
+              Baixar Exemplo
+            </button>
+          </div>
+
           <button onClick={openCreateModal} className="bg-slate-900 text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center shadow-md hover:bg-slate-800 transition-colors">
             <Plus className="w-4 h-4 mr-2" /> Novo Cliente
           </button>
@@ -161,8 +243,14 @@ export function ClientsList() {
                 <input required type="text" value={clientForm.name} onChange={(e) => setClientForm({...clientForm, name: e.target.value})} className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-slate-50 focus:bg-white" placeholder="Empresa XPTO Ltda" />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">Categoria (Opcional)</label>
-                <input type="text" value={clientForm.accountantCategory} onChange={(e) => setClientForm({...clientForm, accountantCategory: e.target.value})} className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-slate-50 focus:bg-white" placeholder="Ex: Lucro Presumido, Simples Nacional..." />
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Categorias (Opcional - separe por vírgula)</label>
+                <input 
+                  type="text" 
+                  value={clientForm.accountantCategory} 
+                  onChange={(e) => setClientForm({...clientForm, accountantCategory: e.target.value})} 
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-slate-50 focus:bg-white" 
+                  placeholder="Ex: Lucro Presumido, Simples Nacional" 
+                />
               </div>
               <div>
                 <label className="block text-xs font-semibold text-slate-600 mb-1">Hash / Token Integração Externa (Opcional)</label>
@@ -216,7 +304,8 @@ export function ClientsList() {
               <div className="flex-1 overflow-y-auto border border-slate-200 rounded-xl p-2 max-h-60">
                 {clients.filter(c => {
                    const matchSearch = c.name.toLowerCase().includes(muralSearch.toLowerCase()) || c.cnpj.includes(muralSearch);
-                   const matchCategory = muralCategoryFilter === "all" || c.accountantCategory === muralCategoryFilter;
+                   const clientCats = c.accountantCategory ? c.accountantCategory.split(",").map((cat: string) => cat.trim()) : [];
+                   const matchCategory = muralCategoryFilter === "all" || clientCats.includes(muralCategoryFilter);
                    return matchSearch && matchCategory;
                 }).map(client => (
                   <button 

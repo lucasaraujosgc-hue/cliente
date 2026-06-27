@@ -18,6 +18,8 @@ export const clients = pgTable('clients', {
     on_due: true,
     on_new_file: true
   }),
+  resetToken: text('reset_token'),
+  resetTokenExpires: text('reset_token_expires')
 });
 
 export const documents = pgTable('documents', {

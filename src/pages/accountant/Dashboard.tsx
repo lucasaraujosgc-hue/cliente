@@ -43,7 +43,9 @@ export function AccountantDashboard() {
                   <FileText className="w-5 h-5" />
                 </div>
                 <div>
-                  <h4 className="text-sm font-medium text-slate-900">{doc.title}</h4>
+                  <h4 className="text-sm font-medium text-slate-900">
+                    {doc.title} {doc.status === "waiting_accountant" && <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-amber-100 text-amber-800">Recálculo Solicitado</span>}
+                  </h4>
                   <div className="text-xs text-slate-500 mt-1 flex gap-2 items-center">
                      <span className="font-medium text-slate-700">{doc.clientName}</span>
                      <span>•</span>

@@ -6,10 +6,15 @@ export function SetupProfile() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
   const navigate = useNavigate();
 
   const handleSetup = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!acceptedTerms) {
+      setError("Você deve aceitar os termos de uso para continuar.");
+      return;
+    }
     const token = localStorage.getItem("clientToken") || sessionStorage.getItem("clientToken");
     
     try {
@@ -79,6 +84,21 @@ export function SetupProfile() {
               onChange={e => setPassword(e.target.value)}
             />
           </div>
+
+          <div className="flex items-start bg-slate-50 dark:bg-slate-700/30 p-3 rounded-xl border border-slate-200 dark:border-slate-600">
+            <input 
+              id="terms" 
+              type="checkbox" 
+              required
+              checked={acceptedTerms}
+              onChange={e => setAcceptedTerms(e.target.checked)}
+              className="mt-0.5 w-4 h-4 text-virgula-green border-slate-300 rounded focus:ring-virgula-green"
+            />
+            <label htmlFor="terms" className="ml-2 block text-xs text-slate-600 dark:text-slate-400">
+              Eu li e concordo com os <a href="#" className="text-virgula-green hover:underline font-semibold" onClick={(e) => { e.preventDefault(); alert("1. O uso da plataforma é de responsabilidade do cliente.\n2. Os dados trafegados são armazenados com segurança.\n3. O portal não substitui a orientação do seu contador.") }}>Termos de Uso</a> e Política de Privacidade do portal.
+            </label>
+          </div>
+
           <button
             type="submit"
             className="w-full bg-virgula-green text-white font-bold py-3 rounded-lg hover:bg-emerald-600 transition-colors shadow-lg shadow-emerald-900/30"

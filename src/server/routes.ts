@@ -38,11 +38,14 @@ webpush.setVapidDetails(
   vapidKeys.publicKey,
   vapidKeys.privateKey,
 );
-import { eq, desc, asc, inArray } from "drizzle-orm";
+import { eq, desc, asc, inArray, or } from "drizzle-orm";
 import fs from "fs";
+import { Resend } from 'resend';
+
+const resend = new Resend(process.env.RESEND_API_KEY || "re_123");
 import https from "https";
 import path from "path";
-import { differenceInDays, parseISO, format } from "date-fns";
+import { differenceInDays, format, isBefore, parseISO } from "date-fns";
 
 const UPLOADS_DIR = path.join(process.cwd(), "uploads");
 if (!fs.existsSync(UPLOADS_DIR)) {
@@ -462,6 +465,88 @@ export function setupRoutes(app: Express) {
   // -------------------------------------------------------------
   // AUTH
   // -------------------------------------------------------------
+
+  // Client Forgot Password
+  app.post("/api/auth/client/forgot-password", async (req, res) => {
+    try {
+      const { cnpj } = req.body;
+      const cleanCnpj = String(cnpj).replace(/\D/g, "");
+      const clientList = await db.select().from(clients);
+      const client = clientList.find(c => String(c.cnpj).replace(/\D/g, "") === cleanCnpj);
+
+      if (!client) {
+        return res.status(404).json({ error: "CNPJ não encontrado." });
+      }
+
+      if (!client.email) {
+        return res.status(400).json({ error: "Nenhum e-mail cadastrado para este cliente." });
+      }
+
+      const token = Math.floor(100000 + Math.random() * 900000).toString(); // 6 digits
+      const expires = new Date(Date.now() + 3600000).toISOString(); // 1 hour
+
+      await db.update(clients)
+        .set({ resetToken: token, resetTokenExpires: expires })
+        .where(eq(clients.id, client.id));
+
+      if (process.env.RESEND_API_KEY) {
+        await resend.emails.send({
+          from: "Portal Contábil <onboarding@resend.dev>",
+          to: client.email,
+          subject: "Recuperação de Senha - Portal do Cliente",
+          html: `
+            <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+               <h2>Recuperação de Senha</h2>
+               <p>Você solicitou a recuperação de senha para o CNPJ <strong>${client.cnpj}</strong>.</p>
+               <p>Seu código de verificação é:</p>
+               <h1 style="background: #f4f4f5; padding: 16px; text-align: center; letter-spacing: 4px; border-radius: 8px;">${token}</h1>
+               <p>Este código expira em 1 hora.</p>
+               <p>Se você não solicitou, ignore este e-mail.</p>
+            </div>
+          `
+        });
+      }
+      
+      res.json({ success: true });
+    } catch(err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Client Reset Password
+  app.post("/api/auth/client/reset-password", async (req, res) => {
+    try {
+      const { cnpj, token, newPassword } = req.body;
+      const cleanCnpj = String(cnpj).replace(/\D/g, "");
+      const clientList = await db.select().from(clients);
+      const client = clientList.find(c => String(c.cnpj).replace(/\D/g, "") === cleanCnpj);
+
+      if (!client) {
+        return res.status(404).json({ error: "CNPJ não encontrado." });
+      }
+
+      if (client.resetToken !== token) {
+        return res.status(400).json({ error: "Código inválido." });
+      }
+
+      if (!client.resetTokenExpires || isBefore(parseISO(client.resetTokenExpires), new Date())) {
+         return res.status(400).json({ error: "Código expirado." });
+      }
+
+      await db.update(clients)
+        .set({ 
+          passwordHash: newPassword,
+          resetToken: null,
+          resetTokenExpires: null,
+          firstAccessDone: true 
+        })
+        .where(eq(clients.id, client.id));
+
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
 
   // Client Login
   app.post("/api/auth/client/login", async (req, res) => {
@@ -1640,7 +1725,7 @@ export function setupRoutes(app: Express) {
     const allDocs = await db
       .select()
       .from(documents)
-      .where(eq(documents.uploadedBy, "client"))
+      .where(or(eq(documents.uploadedBy, "client"), eq(documents.status, "waiting_accountant")))
       .orderBy(desc(documents.createdAt));
     const allClients = await db.select().from(clients);
 
