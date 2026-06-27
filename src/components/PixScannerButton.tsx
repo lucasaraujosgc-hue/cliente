@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Copy, Check, QrCode } from "lucide-react";
 import * as pdfjsLib from "pdfjs-dist";
+// @ts-ignore
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import jsQR from "jsqr";
 
@@ -327,7 +328,7 @@ export function PixScannerButton({ docId, fileUrl }: PixScannerButtonProps) {
   return (
     <button
       onClick={handleCopyClick}
-      className={`h-10 px-3 border text-xs font-bold rounded-xl transition-all flex items-center justify-center min-w-[100px] ${
+      className={`h-10 px-3 w-full sm:w-auto border text-xs font-bold rounded-xl transition-all flex items-center justify-center min-w-[100px] ${
         copied
           ? "bg-emerald-50 border-emerald-200 text-emerald-700 dark:bg-emerald-900/30 dark:border-emerald-800/50 dark:text-emerald-400"
           : "bg-indigo-50 dark:bg-indigo-900/30 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 border-indigo-100 dark:border-indigo-800/50 text-indigo-700 dark:text-indigo-300"

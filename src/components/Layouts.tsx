@@ -210,7 +210,9 @@ export function ClientLayout() {
              </span>
           </div>
           <div className="flex items-center space-x-4">
-             <ThemeToggle />
+             <button onClick={() => window.dispatchEvent(new CustomEvent('open-notifications'))} className="text-slate-500 hover:text-indigo-500 transition-colors" title="Notificações">
+               <Bell className="w-5 h-5" />
+             </button>
              <button onClick={handleLogout} className="text-slate-500 hover:text-red-500 transition-colors" title="Sair">
                <LogOut className="w-5 h-5" />
              </button>
@@ -225,15 +227,9 @@ export function ClientLayout() {
             <div className="flex gap-2 mb-6 overflow-x-auto pb-2 border-b border-slate-200 dark:border-slate-800 shrink-0">
               <Link
                 to="/dashboard"
-                className={`px-4 py-2 text-sm font-bold rounded-t-xl transition-colors ${location.pathname === '/dashboard' && !location.search.includes('tab=situacao') ? 'text-indigo-600 dark:text-indigo-400 border-b-2 border-indigo-600 dark:border-indigo-400' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`}
+                className={`px-4 py-2 text-sm font-bold rounded-t-xl transition-colors ${location.pathname === '/dashboard' ? 'text-indigo-600 dark:text-indigo-400 border-b-2 border-indigo-600 dark:border-indigo-400' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`}
               >
                 Visão Geral
-              </Link>
-              <Link
-                to="/dashboard?tab=situacao"
-                className={`px-4 py-2 text-sm font-bold rounded-t-xl transition-colors ${location.pathname === '/dashboard' && location.search.includes('tab=situacao') ? 'text-indigo-600 dark:text-indigo-400 border-b-2 border-indigo-600 dark:border-indigo-400' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`}
-              >
-                Situação Fiscal
               </Link>
               <Link
                 to="/overdue"

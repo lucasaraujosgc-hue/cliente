@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef, FormEvent } from "react";
 import { useParams, Link } from "react-router-dom";
-import { ArrowLeft, Send, UploadCloud, MessageSquare, FileSpreadsheet, Edit3, DollarSign, Calendar, PlusCircle, Check, Trash2, Download } from "lucide-react";
-import { format, parseISO } from "date-fns";
+import { ArrowLeft, Send, UploadCloud, MessageSquare, FileSpreadsheet, Edit3, DollarSign, Calendar, PlusCircle, Check, Trash2, Download, AlertCircle } from "lucide-react";
+import { format, parseISO, isBefore } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import * as XLSX from "xlsx";
 
@@ -10,6 +10,9 @@ export function ClientDetail() {
   const [data, setData] = useState<any>(null);
 
   const [editingMsg, setEditingMsg] = useState<any>(null);
+
+  const [docFilterCategory, setDocFilterCategory] = useState("");
+  const [docFilterOverdue, setDocFilterOverdue] = useState(false);
 
   const [editingDocId, setEditingDocId] = useState<string | null>(null);
   const [editDocForm, setEditDocForm] = useState({
@@ -261,9 +264,24 @@ export function ClientDetail() {
                 <div className="flex-1">
                    <label className="block text-xs font-semibold text-slate-500 mb-1">Categoria</label>
                    <select name="category" className="w-full px-3 py-2 text-sm border border-slate-200 bg-white/50 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none">
-                      <option value="taxes">Guia / Imposto</option>
-                      <option value="payroll">Folha / Pró-labore</option>
-                      <option value="company">Doc Empresa (Societário)</option>
+                      <option value="">Selecione...</option>
+                      <option value="Simples Nacional">Simples Nacional</option>
+                      <option value="Honorários">Honorários</option>
+                      <option value="Contracheque">Contracheque</option>
+                      <option value="FGTS">FGTS</option>
+                      <option value="INSS">INSS</option>
+                      <option value="Folha de Pagamento">Folha de Pagamento</option>
+                      <option value="Rescisão">Rescisão</option>
+                      <option value="Férias">Férias</option>
+                      <option value="Notas Fiscais">Notas Fiscais</option>
+                      <option value="Parcelamento">Parcelamento</option>
+                      <option value="Outros">Outros</option>
+                      <option value="Corpo de Bombeiros">Corpo de Bombeiros</option>
+                      <option value="IBAMA">IBAMA</option>
+                      <option value="CSLL">CSLL</option>
+                      <option value="IRPJ">IRPJ</option>
+                      <option value="Alvará">Alvará</option>
+                      <option value="IRPF">IRPF</option>
                    </select>
                 </div>
                 <div className="flex-1">
@@ -500,71 +518,131 @@ export function ClientDetail() {
       </div>
 
       <div className="bg-white/80 backdrop-blur-xl border text-slate-900 border-white rounded-3xl overflow-hidden shadow-xl shadow-slate-200/50 mt-8">
-        <div className="px-6 py-4 border-b border-white bg-white/50 flex items-center justify-between">
+        <div className="px-6 py-4 border-b border-white bg-white/50 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
            <h3 className="font-semibold text-slate-800">Todos os Documentos do Cliente</h3>
+           <div className="flex flex-wrap items-center gap-3">
+             <label className="flex items-center gap-2 text-sm text-slate-600 font-medium bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200 cursor-pointer hover:bg-slate-100 transition-colors">
+                <input 
+                  type="checkbox" 
+                  checked={docFilterOverdue} 
+                  onChange={e => setDocFilterOverdue(e.target.checked)}
+                  className="rounded border-slate-300 text-rose-500 focus:ring-rose-500"
+                />
+                Apenas Atrasados
+             </label>
+             <select 
+               value={docFilterCategory} 
+               onChange={e => setDocFilterCategory(e.target.value)}
+               className="px-3 py-1.5 text-sm border border-slate-200 rounded-lg bg-slate-50 outline-none focus:ring-2 focus:ring-blue-500"
+             >
+                <option value="">Todas as Categorias</option>
+                <option value="Simples Nacional">Simples Nacional</option>
+                <option value="Honorários">Honorários</option>
+                <option value="Contracheque">Contracheque</option>
+                <option value="FGTS">FGTS</option>
+                <option value="INSS">INSS</option>
+                <option value="Folha de Pagamento">Folha de Pagamento</option>
+                <option value="Rescisão">Rescisão</option>
+                <option value="Férias">Férias</option>
+                <option value="Notas Fiscais">Notas Fiscais</option>
+                <option value="Parcelamento">Parcelamento</option>
+                <option value="Outros">Outros</option>
+                <option value="Corpo de Bombeiros">Corpo de Bombeiros</option>
+                <option value="IBAMA">IBAMA</option>
+                <option value="CSLL">CSLL</option>
+                <option value="IRPJ">IRPJ</option>
+                <option value="Alvará">Alvará</option>
+                <option value="IRPF">IRPF</option>
+             </select>
+           </div>
         </div>
-        <div className="divide-y divide-slate-100/50 max-h-[400px] overflow-auto">
-          {data.documents.length === 0 && (
-            <div className="p-8 text-center text-slate-500">Nenhum documento encontrado.</div>
-          )}
-          {data.documents.map((doc: any) => (
-            <div key={doc.id} className="p-4 px-6 hover:bg-white flex items-center justify-between group">
-              <div className="flex items-center">
-                <div className={`w-10 h-10 rounded-full flex items-center justify-center mr-4 ${doc.uploadedBy === 'client' ? 'bg-amber-50 text-amber-600' : 'bg-blue-50 text-blue-600'}`}>
-                  {doc.uploadedBy === 'client' ? <UploadCloud className="w-5 h-5" /> : <MessageSquare className="w-5 h-5" />}
-                </div>
-                <div className="flex-1">
-                  <h4 className="text-sm font-medium text-slate-900">{doc.title} {doc.competence && `(Comp: ${doc.competence})`}</h4>
-                  <div className="text-xs text-slate-500 mt-1 flex flex-wrap gap-2 items-center">
-                     <span className="font-medium text-slate-700">Origem: {doc.uploadedBy === 'client' ? 'Cliente' : 'Contador'}</span>
-                     <span>•</span>
-                     <span className={doc.status === 'ok' || doc.status === 'viewed' ? 'text-emerald-500 font-semibold' : ''}>Status: {doc.status}</span>
-                     <span>•</span>
-                     <span>Cat: {doc.category}</span>
-                     <span>•</span>
-                     {doc.dueDate && <span>Vence: {doc.dueDate.includes('T') ? doc.dueDate.split('T')[0] : doc.dueDate}</span>}
-                     {doc.extractedData?.extractedValue && (
-                       <>
+        <div className="divide-y divide-slate-100/50 max-h-[500px] overflow-auto">
+          {(() => {
+            const filteredDocs = data.documents.filter((doc: any) => {
+               if (docFilterCategory && doc.category !== docFilterCategory) return false;
+               if (docFilterOverdue) {
+                  if (!doc.dueDate) return false;
+                  if (doc.status === 'paid' || doc.status === 'ok') return false;
+                  const isLate = isBefore(parseISO(doc.dueDate), new Date());
+                  if (!isLate) return false;
+               }
+               return true;
+            });
+
+            if (filteredDocs.length === 0) {
+              return <div className="p-8 text-center text-slate-500">Nenhum documento encontrado.</div>;
+            }
+
+            return filteredDocs.map((doc: any) => {
+              let isLate = false;
+              if (doc.dueDate && doc.status !== 'paid' && doc.status !== 'ok') {
+                isLate = isBefore(parseISO(doc.dueDate), new Date());
+              }
+
+              return (
+                <div key={doc.id} className={`p-4 px-6 hover:bg-white flex items-center justify-between group transition-colors ${isLate ? 'bg-rose-50/30' : ''}`}>
+                  <div className="flex items-center">
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center mr-4 ${isLate ? 'bg-rose-100 text-rose-600' : (doc.uploadedBy === 'client' ? 'bg-amber-50 text-amber-600' : 'bg-blue-50 text-blue-600')}`}>
+                      {isLate ? <AlertCircle className="w-5 h-5 animate-pulse" /> : (doc.uploadedBy === 'client' ? <UploadCloud className="w-5 h-5" /> : <MessageSquare className="w-5 h-5" />)}
+                    </div>
+                    <div className="flex-1">
+                      <h4 className={`text-sm font-medium ${isLate ? 'text-rose-700' : 'text-slate-900'}`}>{doc.title} {doc.competence && `(Comp: ${doc.competence})`}</h4>
+                      <div className="text-xs text-slate-500 mt-1 flex flex-wrap gap-2 items-center">
+                         <span className="font-medium text-slate-700">Origem: {doc.uploadedBy === 'client' ? 'Cliente' : 'Contador'}</span>
                          <span>•</span>
-                         <span className="text-slate-700 font-semibold">Valor: {doc.extractedData.extractedValue.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</span>
-                       </>
+                         <span className={doc.status === 'ok' || doc.status === 'viewed' ? 'text-emerald-500 font-semibold' : ''}>Status: {doc.status}</span>
+                         <span>•</span>
+                         <span>Cat: {doc.category}</span>
+                         <span>•</span>
+                         {doc.dueDate && (
+                           <span className={isLate ? 'text-rose-600 font-bold' : ''}>
+                             Vence: {doc.dueDate.includes('T') ? doc.dueDate.split('T')[0] : doc.dueDate} {isLate && '(ATRASADO)'}
+                           </span>
+                         )}
+                         {doc.extractedData?.extractedValue && (
+                           <>
+                             <span>•</span>
+                             <span className="text-slate-700 font-semibold">Valor: {doc.extractedData.extractedValue.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</span>
+                           </>
+                         )}
+                         <span>•</span>
+                         <span>{format(parseISO(doc.createdAt), "dd MMM, yyyy", {locale: ptBR})}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity ml-4">
+                     <button 
+                        onClick={() => {
+                          setEditingDocId(doc.id);
+                          setEditDocForm({
+                             title: doc.title || "",
+                             category: doc.category || "",
+                             dueDate: doc.dueDate ? doc.dueDate.split('T')[0] : "",
+                             status: doc.status || "",
+                             valor: doc.extractedData?.extractedValue || "",
+                             file: null
+                          });
+                        }} 
+                        title="Editar Documento" 
+                        className="p-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100"
+                     >
+                        <Edit3 className="w-4 h-4" />
+                     </button>
+                     {doc.fileUrl && (
+                        <a href={getAuthenticatedFileUrl(doc.fileUrl)} target="_blank" download rel="noreferrer" title="Baixar" className="p-2 bg-slate-100 text-slate-600 rounded-lg hover:bg-slate-200">
+                           <Download className="w-4 h-4" />
+                        </a>
                      )}
-                     <span>•</span>
-                     <span>{format(parseISO(doc.createdAt), "dd MMM, yyyy", {locale: ptBR})}</span>
+                     {doc.uploadedBy === 'client' && doc.status !== 'ok' && doc.status !== 'viewed' && (
+                        <button onClick={() => markDocOk(doc.id)} title="Marcar como Recebido/OK" className="p-2 bg-emerald-50 text-emerald-600 rounded-lg hover:bg-emerald-100">
+                           <Check className="w-4 h-4" />
+                        </button>
+                     )}
                   </div>
                 </div>
-              </div>
-              <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity ml-4">
-                 <button 
-                    onClick={() => {
-                      setEditingDocId(doc.id);
-                      setEditDocForm({
-                         title: doc.title || "",
-                         category: doc.category || "",
-                         dueDate: doc.dueDate ? doc.dueDate.split('T')[0] : "",
-                         status: doc.status || "",
-                         valor: doc.extractedData?.extractedValue || "",
-                         file: null
-                      });
-                    }} 
-                    title="Editar Documento" 
-                    className="p-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100"
-                 >
-                    <Edit3 className="w-4 h-4" />
-                 </button>
-                 {doc.fileUrl && (
-                    <a href={getAuthenticatedFileUrl(doc.fileUrl)} target="_blank" download rel="noreferrer" title="Baixar" className="p-2 bg-slate-100 text-slate-600 rounded-lg hover:bg-slate-200">
-                       <Download className="w-4 h-4" />
-                    </a>
-                 )}
-                 {doc.uploadedBy === 'client' && doc.status !== 'ok' && doc.status !== 'viewed' && (
-                    <button onClick={() => markDocOk(doc.id)} title="Marcar como Recebido/OK" className="p-2 bg-emerald-50 text-emerald-600 rounded-lg hover:bg-emerald-100">
-                       <Check className="w-4 h-4" />
-                    </button>
-                 )}
-              </div>
-            </div>
-          ))}
+              );
+            });
+          })()}
         </div>
       </div>
 
@@ -634,19 +712,24 @@ export function ClientDetail() {
                     onChange={e => setEditDocForm({ ...editDocForm, category: e.target.value })} 
                     className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500"
                   >
-                    <option value="">Selecione...</option>
-                    <option value="das">Guia Simples (DAS)</option>
-                    <option value="iss">Guia ISS</option>
-                    <option value="inss">Guia INSS / Darf</option>
-                    <option value="irpj">Guia IRPJ</option>
-                    <option value="fgts">FGTS</option>
-                    <option value="folha">Folha / Holerites</option>
-                    <option value="alvara">Alvará / Licença</option>
-                    <option value="imposto_renda">IRPF (Imposto de Renda)</option>
-                    <option value="balanco">Balanço / DRE</option>
-                    <option value="extrato">Extrato Bancário</option>
-                    <option value="sitfis">Situação Fiscal</option>
-                    <option value="other">Outros Documentos</option>
+                      <option value="">Selecione...</option>
+                      <option value="Simples Nacional">Simples Nacional</option>
+                      <option value="Honorários">Honorários</option>
+                      <option value="Contracheque">Contracheque</option>
+                      <option value="FGTS">FGTS</option>
+                      <option value="INSS">INSS</option>
+                      <option value="Folha de Pagamento">Folha de Pagamento</option>
+                      <option value="Rescisão">Rescisão</option>
+                      <option value="Férias">Férias</option>
+                      <option value="Notas Fiscais">Notas Fiscais</option>
+                      <option value="Parcelamento">Parcelamento</option>
+                      <option value="Outros">Outros</option>
+                      <option value="Corpo de Bombeiros">Corpo de Bombeiros</option>
+                      <option value="IBAMA">IBAMA</option>
+                      <option value="CSLL">CSLL</option>
+                      <option value="IRPJ">IRPJ</option>
+                      <option value="Alvará">Alvará</option>
+                      <option value="IRPF">IRPF</option>
                   </select>
                 </div>
                 <div className="flex-1">

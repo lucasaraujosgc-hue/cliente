@@ -114,6 +114,12 @@ export function ClientDashboard() {
   };
 
   useEffect(() => {
+    const handleOpenNotif = () => setShowPrefsModal(true);
+    window.addEventListener('open-notifications', handleOpenNotif);
+    return () => window.removeEventListener('open-notifications', handleOpenNotif);
+  }, []);
+
+  useEffect(() => {
     if (data) {
       const entry = data.billing.find((b: any) => b.month === selectedCompetence);
       if (entry) {
@@ -483,14 +489,6 @@ export function ClientDashboard() {
         </div>
         
         <div className="flex flex-wrap items-center gap-3 mt-2 sm:mt-0">
-          <button
-            onClick={() => setShowPrefsModal(true)}
-            className="p-2.5 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 shadow-sm active:scale-95 transition-all text-xs flex items-center justify-center h-10 w-10"
-            title="Configurar Notificações"
-          >
-            <Bell className="w-5 h-5" />
-          </button>
-          
           <div className="flex items-center bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden h-10 w-[200px]">
             <button 
               onClick={handlePrevCompetence}
@@ -624,7 +622,7 @@ export function ClientDashboard() {
                                 </>
                               )}
                               <span>•</span>
-                              <span className="font-medium">Arquivo: {doc.title || "Documento"}</span>
+                              <span className="font-medium break-all">Arquivo: {doc.title || "Documento"}</span>
                             </div>
                           </div>
                         </div>
@@ -636,9 +634,9 @@ export function ClientDashboard() {
                                </span>
                            </div>
                         ) : (
-                          <div className="flex flex-col gap-2 self-end sm:self-center">
+                          <div className="flex flex-col gap-2 w-full sm:w-auto mt-2 sm:mt-0">
                             {/* Interactive tactile buttons */}
-                            <div className="flex flex-wrap items-center gap-2">
+                            <div className="flex flex-wrap items-center justify-end sm:justify-start gap-2">
                           {doc.fileUrl && (
                             <>
                             <a 
@@ -646,7 +644,7 @@ export function ClientDashboard() {
                               target="_blank" 
                               referrerPolicy="no-referrer"
                               rel="noreferrer" 
-                              className="h-10 px-3 flex items-center justify-center bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 text-xs font-bold rounded-xl text-slate-700 dark:text-slate-300 transition-colors shrink-0"
+                              className="flex-1 sm:flex-none h-10 px-3 flex items-center justify-center bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 text-xs font-bold rounded-xl text-slate-700 dark:text-slate-300 transition-colors shrink-0"
                               title="Visualizar documento"
                             >
                               <Eye className="w-3.5 h-3.5 mr-1.5" /> Ver Arquivo
@@ -668,7 +666,7 @@ export function ClientDashboard() {
                           {doc.pixCode ? (
                             <button 
                               onClick={() => handleCopyCode(doc.id, doc.pixCode)}
-                              className="h-10 px-3 bg-indigo-50 dark:bg-indigo-900/30 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 border border-indigo-100 dark:border-indigo-800/50 text-indigo-700 dark:text-indigo-300 text-xs font-bold rounded-xl transition-all flex items-center justify-center min-w-[100px]"
+                              className="flex-1 sm:flex-none h-10 px-3 w-full sm:w-auto bg-indigo-50 dark:bg-indigo-900/30 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 border border-indigo-100 dark:border-indigo-800/50 text-indigo-700 dark:text-indigo-300 text-xs font-bold rounded-xl transition-all flex items-center justify-center min-w-[100px]"
                             >
                               {copiedId === doc.id ? (
                                 <span className="text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-1 animate-pulse">
@@ -682,7 +680,9 @@ export function ClientDashboard() {
                             </button>
                           ) : (
                             doc.fileUrl && doc.fileUrl.toLowerCase().endsWith(".pdf") && (
-                              <PixScannerButton docId={doc.id} fileUrl={getAuthenticatedFileUrl(doc.fileUrl) || ""} />
+                              <div className="flex-1 sm:flex-none">
+                                <PixScannerButton docId={doc.id} fileUrl={getAuthenticatedFileUrl(doc.fileUrl) || ""} />
+                              </div>
                             )
                           )}
 
@@ -690,14 +690,14 @@ export function ClientDashboard() {
                           {doc.status !== "paid" && (
                             <button 
                               onClick={() => handleMarkAsPaid(doc.id)}
-                              className="h-10 px-3 bg-slate-900 border border-slate-900 hover:bg-slate-800 dark:bg-emerald-500 dark:border-emerald-500 dark:text-white dark:hover:bg-emerald-600 text-white text-xs font-bold rounded-xl shadow-xs transition-transform active:scale-95"
+                              className="flex-1 sm:flex-none h-10 px-3 bg-slate-900 border border-slate-900 hover:bg-slate-800 dark:bg-emerald-500 dark:border-emerald-500 dark:text-white dark:hover:bg-emerald-600 text-white text-xs font-bold rounded-xl shadow-xs transition-transform active:scale-95"
                             >
                               Marcar Pago
                             </button>
                           )}
                         </div>
                         {/* INICIO BOTAO GERAR GUIA */}
-                        <div className="mt-3">
+                        <div className="w-full mt-2">
                             <GuiaAtualizarButton 
                                 clienteId={data.client.id}
                                 guia={{

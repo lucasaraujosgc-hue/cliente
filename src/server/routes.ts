@@ -193,13 +193,6 @@ async function sendClientNotification(clientId: string, title: string, body: str
       }
     }
   }
-
-  // Registra no painel como mensagem do contador
-  await db.insert(messages).values({
-    clientId: clientId,
-    content: `**${title}**\n${body}`,
-    direction: "accountant_to_client"
-  });
 }
 
 // ── Helper HTTP nativo (evita problemas com node-fetch ESM) ──────────────────
@@ -297,6 +290,9 @@ async function serproPost(
 
   return httpsPost(url, headers, JSON.stringify(payload), agent);
 }
+
+const webhookNotificationTimers: Record<string, NodeJS.Timeout> = {};
+const webhookNotificationDocs: Record<string, any[]> = {};
 
 export function setupRoutes(app: Express) {
   app.get("/api/fix-db", async (req, res) => {
@@ -408,20 +404,53 @@ export function setupRoutes(app: Express) {
         })
         .returning();
 
-      // Trigger on_file_available notification logic here for this document
-      const rules = await db.select().from(scheduledNotifications)
-        .where(eq(scheduledNotifications.type, 'on_file_available'));
-      
-      for (const rule of rules) {
-        if (!rule.clientId || rule.clientId === newDoc[0].clientId) {
-          let title = (rule.title || "Nova Guia Disponível").replace(/\[NOME_GUIA\]/g, newDoc[0].title).replace(/\[CATEGORIA\]/g, newDoc[0].category);
-          let body = (rule.body || "").replace(/\[NOME_GUIA\]/g, newDoc[0].title)
-                                       .replace(/\[CATEGORIA\]/g, newDoc[0].category)
-                                       .replace(/\[VENCIMENTO\]/g, newDoc[0].dueDate || "N/A");
-          
-          await sendClientNotification(newDoc[0].clientId, title, body);
-        }
+      // Trigger on_file_available notification logic here for this document (with debounce)
+      const clientId = newDoc[0].clientId;
+
+      if (!webhookNotificationDocs[clientId]) {
+        webhookNotificationDocs[clientId] = [];
       }
+      webhookNotificationDocs[clientId].push(newDoc[0]);
+
+      if (webhookNotificationTimers[clientId]) {
+        clearTimeout(webhookNotificationTimers[clientId]);
+      }
+
+      webhookNotificationTimers[clientId] = setTimeout(async () => {
+        const docs = webhookNotificationDocs[clientId];
+        delete webhookNotificationDocs[clientId];
+        delete webhookNotificationTimers[clientId];
+
+        try {
+          const rules = await db.select().from(scheduledNotifications)
+            .where(eq(scheduledNotifications.type, 'on_file_available'));
+          
+          for (const rule of rules) {
+            if (!rule.clientId || rule.clientId === clientId) {
+              let title = rule.title || "Nova Guia Disponível";
+              let body = rule.body || "";
+
+              if (docs.length === 1) {
+                const doc = docs[0];
+                title = title.replace(/\[NOME_GUIA\]/g, doc.title || "").replace(/\[CATEGORIA\]/g, doc.category || "");
+                body = body.replace(/\[NOME_GUIA\]/g, doc.title || "")
+                           .replace(/\[CATEGORIA\]/g, doc.category || "")
+                           .replace(/\[VENCIMENTO\]/g, doc.dueDate || "N/A");
+              } else {
+                title = `Novos Documentos Recebidos (${docs.length})`;
+                let docsList = docs.map((d: any) => `- ${d.title || "Documento"}`).join('\\n');
+                body = body.replace(/\[NOME_GUIA\]/g, `Vários arquivos recebidos:\\n${docsList}`)
+                           .replace(/\[CATEGORIA\]/g, "Múltiplas Categorias")
+                           .replace(/\[VENCIMENTO\]/g, "Verificar no sistema");
+              }
+              
+              await sendClientNotification(clientId, title, body);
+            }
+          }
+        } catch(e) {
+          console.error("Error in webhook debounced notification", e);
+        }
+      }, 30000); // 30 seconds debounce
 
       res.status(200).json({ success: true, documentId: newDoc[0].id });
     } catch (e: any) {
@@ -1661,7 +1690,7 @@ export function setupRoutes(app: Express) {
     upload.single("file"),
     async (req, res) => {
       try {
-        const docId = parseInt(req.params.id);
+        const docId = req.params.id;
         const { title, category, dueDate, competence, status, valor } = req.body;
 
         const docList = await db.select().from(documents).where(eq(documents.id, docId));
@@ -1685,8 +1714,10 @@ export function setupRoutes(app: Express) {
           extractedData
         };
 
+        let fileReplaced = false;
         if (req.file) {
           updateData.fileUrl = `/uploads/${req.file.filename}`;
+          fileReplaced = true;
         }
 
         const [updated] = await db
@@ -1694,6 +1725,21 @@ export function setupRoutes(app: Express) {
           .set(updateData)
           .where(eq(documents.id, docId))
           .returning();
+
+        if (fileReplaced) {
+          // Check client preferences
+          const [clientRecord] = await db.select().from(clients).where(eq(clients.id, currentDoc.clientId));
+          if (clientRecord && clientRecord.notificationPreferences) {
+            const prefs = clientRecord.notificationPreferences as any;
+            if (prefs.receives_all && prefs.on_new_file) {
+              await db.insert(messages).values({
+                clientId: currentDoc.clientId,
+                content: `O documento **${updated.title || 'Guia'}** foi atualizado/substituído pelo contador.`,
+                direction: "accountant_to_client"
+              });
+            }
+          }
+        }
 
         res.json({ success: true, document: updated });
       } catch (err: any) {

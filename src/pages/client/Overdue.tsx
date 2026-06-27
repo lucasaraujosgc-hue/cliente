@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { format, isBefore, parseISO, startOfDay, differenceInDays } from "date-fns";
-import { AlertCircle, FileText, Download, CheckCircle, Clock, RotateCw, Calendar, DollarSign } from "lucide-react";
+import { AlertCircle, FileText, Download, CheckCircle, Clock, RotateCw, Calendar, DollarSign, Send } from "lucide-react";
 import { PixScannerButton } from "../../components/PixScannerButton";
 import { GuiaAtualizarButton } from "../../components/GuiaAtualizarButton";
 
@@ -158,104 +158,108 @@ export function ClientOverdue() {
         </div>
       ) : (
         /* GRID DE GUIAS EM ATRASO */
-        <div className="grid gap-5">
+        <div className="space-y-3">
           {overdueDocs.map((doc: any) => {
             const daysOverdue = getDaysOverdue(doc.dueDate);
+            const isHighlighted = true;
             return (
               <div 
                 key={doc.id} 
-                className="group relative bg-white dark:bg-slate-900 border border-slate-200/75 hover:border-rose-300/60 dark:border-slate-800 dark:hover:border-rose-900/45 rounded-3xl p-5 sm:p-6 shadow-xs hover:shadow-md transition-all duration-305 flex flex-col md:flex-row md:items-center justify-between gap-5 overflow-hidden"
+                className="relative overflow-hidden p-4 rounded-2xl border transition-all bg-gradient-to-r from-red-50/50 to-amber-50/20 shadow-xs border-amber-200 dark:from-rose-950/15 dark:to-amber-950/5 dark:border-rose-900/40"
               >
-                {/* Linha brilhante indicadora de alta prioridade na borda esquerda */}
-                <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-rose-600 group-hover:bg-rose-500 transition-colors" />
+                <div className="absolute top-0 bottom-0 left-0 w-1.5 bg-rose-500" />
 
-                <div className="flex items-start gap-4 ml-1">
-                  {/* Ícone de Documento Estilizado */}
-                  <div className="w-12 h-12 rounded-2xl bg-rose-50 dark:bg-rose-950/20 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0 border border-rose-100 dark:border-rose-900/30">
-                    <FileText className="w-6 h-6" />
-                  </div>
-                  
-                  <div className="space-y-1.5">
-                    <h3 className="font-extrabold text-slate-900 dark:text-white text-base leading-snug group-hover:text-rose-600 dark:group-hover:text-rose-400 transition-colors">
-                      {doc.title}
-                    </h3>
-                    
-                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500 dark:text-slate-400 font-medium">
-                      <span className="flex items-center gap-1 text-rose-600 dark:text-rose-400 font-extrabold bg-rose-500/10 px-2 py-0.5 rounded-md border border-rose-500/20 animate-pulse">
-                        <Clock className="w-3.5 h-3.5" />
-                        Atrasado faz {daysOverdue} {daysOverdue === 1 ? "dia" : "dias"}
-                      </span>
-                      {doc.competence && (
-                        <span className="flex items-center gap-1 font-semibold text-slate-400 dark:text-slate-500">
-                          <Calendar className="w-3.5 h-3.5" />
-                          Competência: {doc.competence}
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
+                  <div className="flex items-start sm:items-center gap-3">
+                    <div className="p-2.5 rounded-xl shrink-0 mt-0.5 sm:mt-0 bg-rose-500/10 text-rose-500 dark:bg-rose-500/20">
+                      <AlertCircle className="w-5 h-5 animate-pulse" />
+                    </div>
+
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h4 className="font-bold text-slate-800 dark:text-slate-100 text-sm capitalize">
+                          {doc.category === 'taxes' ? 'Impostos' : doc.category === 'payroll' ? 'Folha' : (doc.category || 'Geral')}
+                        </h4>
+                        <span className="px-2 py-0.5 text-[9px] font-extrabold uppercase rounded-full bg-rose-500/10 text-rose-600 border border-rose-500/20 animate-pulse">
+                          Atrasado {daysOverdue} {daysOverdue === 1 ? "dia" : "dias"}
                         </span>
-                      )}
-                      {doc.extractedData?.extractedValue && (
-                        <>
-                          <span>•</span>
-                          <span className="font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1">
-                            <DollarSign className="w-3 h-3 text-slate-400" /> {doc.extractedData.extractedValue.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                        {doc.competence && (
+                          <span className="px-2 py-0.5 text-[9px] font-extrabold uppercase rounded-full bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
+                            Comp: {doc.competence}
                           </span>
-                        </>
-                      )}
+                        )}
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+                        <span className="flex items-center gap-1">
+                          <Calendar className="w-3 h-3 text-slate-400" /> Vencimento: <strong className="text-slate-700 dark:text-slate-300 font-extrabold">{doc.dueDate ? (doc.dueDate.includes("-") ? `${doc.dueDate.split("T")[0].split("-")[2]}/${doc.dueDate.split("T")[0].split("-")[1]}/${doc.dueDate.split("T")[0].split("-")[0]}` : doc.dueDate) : "N/D"}</strong>
+                        </span>
+                        {doc.extractedData?.extractedValue && (
+                          <>
+                            <span>•</span>
+                            <span className="font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1">
+                              <DollarSign className="w-3 h-3 text-slate-400" /> {doc.extractedData.extractedValue.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                            </span>
+                          </>
+                        )}
+                        <span>•</span>
+                        <span className="font-medium break-all">Arquivo: {doc.title || "Documento"}</span>
+                      </div>
                     </div>
                   </div>
-                </div>
 
-                {/* Toolbar de Ações Integrada */}
-                <div className="flex flex-col gap-3.5 w-full md:w-[280px] shrink-0">
-                  
-                  <div className="flex items-center gap-2 w-full">
-                    {/* Botão de Download */}
-                    {doc.fileUrl && (
-                      <a
-                        href={getAuthenticatedFileUrl(doc.fileUrl)}
-                        download
-                        target="_blank"
-                        rel="noreferrer"
-                        className="flex-1 h-9 bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-black transition-colors flex items-center justify-center gap-1.5 shadow-xs"
-                      >
-                        <Download className="w-3.5 h-3.5" />
-                        Baixar
-                      </a>
-                    )}
-                    
-                    {/* Escaneador PIX */}
-                    {doc.fileUrl && doc.fileUrl.toLowerCase().endsWith(".pdf") && (
-                      <div className="flex-1">
-                         <PixScannerButton docId={doc.id} fileUrl={getAuthenticatedFileUrl(doc.fileUrl) || ""} />
+                  {doc.status === "waiting_accountant" ? (
+                     <div className="flex items-center p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl mt-3 sm:mt-0 sm:self-center w-full sm:w-auto">
+                         <span className="text-xs font-bold text-blue-700 dark:text-blue-400 flex items-center gap-1">
+                             <Send className="w-3.5 h-3.5" /> Aguardando contador.
+                         </span>
+                     </div>
+                  ) : (
+                    <div className="flex flex-col gap-2 self-start sm:self-center w-full sm:w-auto mt-2 sm:mt-0">
+                      <div className="flex flex-wrap items-center justify-end sm:justify-start gap-2">
+                        {doc.fileUrl && (
+                          <a
+                            href={getAuthenticatedFileUrl(doc.fileUrl)}
+                            download
+                            target="_blank"
+                            rel="noreferrer"
+                            className="flex-1 sm:flex-none h-8 px-3 bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-lg text-[10px] font-black transition-colors flex items-center justify-center gap-1.5 shadow-xs"
+                          >
+                            <Download className="w-3.5 h-3.5" />
+                            Baixar
+                          </a>
+                        )}
+                        {doc.fileUrl && doc.fileUrl.toLowerCase().endsWith(".pdf") && (
+                          <div className="flex-1 sm:flex-none">
+                            <PixScannerButton docId={doc.id} fileUrl={getAuthenticatedFileUrl(doc.fileUrl) || ""} />
+                          </div>
+                        )}
+                        <button
+                          onClick={() => handleMarkAsPaid(doc.id)}
+                          className="flex-1 sm:flex-none h-8 px-3 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-900/30 dark:hover:bg-emerald-900/50 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800 rounded-lg text-[10px] font-black transition-colors flex items-center justify-center gap-1.5 shadow-xs"
+                        >
+                          <CheckCircle className="w-3.5 h-3.5" />
+                          Pago
+                        </button>
                       </div>
-                    )}
-                  </div>
-
-                  {/* Componente Integrado de Recálculo do Integra Contador */}
-                  {(doc.category === "DCTFWEB" || doc.category === "SIMPLES_NACIONAL" || doc.category === "taxes" || doc.title?.toUpperCase().includes("DCTFWEB") || doc.title?.toUpperCase().includes("SIMPLES")) && (
-                    <div className="w-full">
-                      <GuiaAtualizarButton 
-                        clienteId={doc.clientId}
-                        guia={{
-                          id: doc.id,
-                          tipoGuia: (doc.category === "DCTFWEB" || doc.title?.toUpperCase().includes("DCTFWEB")) ? "DCTFWEB_INSS" : "DAS_SIMPLES",
-                          competencia: doc.competence || "01/2026",
-                          status: doc.status
-                        }}
-                        isOverdue={true}
-                        onAtualizado={() => loadData()}
-                      />
+                      {(doc.category === "DCTFWEB" || doc.category === "SIMPLES_NACIONAL" || doc.category === "taxes" || doc.title?.toUpperCase().includes("DCTFWEB") || doc.title?.toUpperCase().includes("SIMPLES")) && (
+                        <div className="w-full">
+                          <GuiaAtualizarButton 
+                            clienteId={doc.clientId}
+                            guia={{
+                              id: doc.id,
+                              tipoGuia: (doc.category === "DCTFWEB" || doc.title?.toUpperCase().includes("DCTFWEB")) ? "DCTFWEB_INSS" : "DAS_SIMPLES",
+                              competencia: doc.competence || "01/2026",
+                              status: doc.status
+                            }}
+                            isOverdue={true}
+                            onAtualizado={() => loadData()}
+                          />
+                        </div>
+                      )}
                     </div>
                   )}
-
-                  {/* Marcar como Pago */}
-                  <button
-                    onClick={() => handleMarkAsPaid(doc.id)}
-                    className="h-9 w-full bg-emerald-500 hover:bg-emerald-600 hover:shadow-md hover:shadow-emerald-100 dark:hover:shadow-none text-white rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5"
-                  >
-                    <CheckCircle className="w-3.5 h-3.5" />
-                    Marcar como Pago
-                  </button>
                 </div>
-
               </div>
             );
           })}
