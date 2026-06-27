@@ -170,7 +170,8 @@ function verifyAnyAuth(req: Request, res: Response, next: NextFunction) {
 }
 
 interface TokenCache {
-  token: string;
+  access_token: string;
+  jwt_token: string;
   expiresAt: number;
 }
 const serproTokenCache: { [key: string]: TokenCache } = {};
@@ -179,13 +180,13 @@ function isUuid(str: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
 }
 
-async function getSerproToken(config: any, agent?: any) {
+async function getSerproToken(config: any, agent?: any): Promise<{ access_token: string; jwt_token: string }> {
   const cacheKey = `${config.consumerKey}:${config.ambiente}`;
   const cached = serproTokenCache[cacheKey];
-  
+
   // Reutiliza o token se estiver válido e faltar mais de 5 minutos para expirar
   if (cached && cached.expiresAt > Date.now() + 5 * 60 * 1000) {
-    return cached.token;
+    return { access_token: cached.access_token, jwt_token: cached.jwt_token };
   }
 
   const credentials = Buffer.from(
@@ -210,24 +211,35 @@ async function getSerproToken(config: any, agent?: any) {
     throw new Error(`Erro ao obter token SERPRO: ${resp.status} - ${errText}`);
   }
   const data = await resp.json() as any;
-  
+
   const expiresIn = data.expires_in || 3600;
-  serproTokenCache[cacheKey] = {
-    token: data.access_token,
+  const entry: TokenCache = {
+    access_token: data.access_token,
+    jwt_token: data.jwt_token || "",
     expiresAt: Date.now() + expiresIn * 1000,
   };
+  serproTokenCache[cacheKey] = entry;
 
-  return data.access_token;
+  return { access_token: entry.access_token, jwt_token: entry.jwt_token };
 }
 
-async function serproPost(url: string, token: string, payload: any, agent?: any) {
+async function serproPost(
+  url: string,
+  tokens: { access_token: string; jwt_token: string },
+  payload: any,
+  agent?: any,
+) {
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${tokens.access_token}`,
+    "Content-Type": "application/json",
+    "Accept": "application/json",
+    "Cache-Control": "no-cache",
+  };
+  if (tokens.jwt_token) headers["jwt_token"] = tokens.jwt_token;
+
   return fetchNode(url, {
     method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-      jwt_token: token,
-    },
+    headers,
     body: JSON.stringify(payload),
     agent,
   });
@@ -313,20 +325,6 @@ export function setupRoutes(app: Express) {
       ) {
         titleStr += ` - ${dados_extraidos[0].orgao}: ${dados_extraidos[0].status}`;
 
-        const hasPending = dados_extraidos.some((d: any) => {
-          const st = String(d.status).toUpperCase();
-          return (
-            st.includes("PEND") ||
-            st.includes("IRREGULAR") ||
-            (st !== "REGULAR" && st !== "REGULARIZADO")
-          );
-        });
-        if (hasPending) {
-          await db
-            .update(clients)
-            .set({ regularityStatus: "red" })
-            .where(eq(clients.id, client.id));
-        }
       }
 
       const newDoc = await db
@@ -779,8 +777,13 @@ export function setupRoutes(app: Express) {
             .json({ error: "tipoGuia e competencia são obrigatórios." });
         }
 
-        if (!["DCTFWEB_INSS", "DAS_SIMPLES"].includes(tipoGuia)) {
-          return res.status(400).json({ error: "tipoGuia inválido." });
+        // Integra Contador só é acionado para guias de INSS (DCTFWEB_INSS)
+        // e Simples Nacional (DAS_SIMPLES). Outras categorias não são suportadas.
+        const CATEGORIAS_INTEGRA_CONTADOR = ["DCTFWEB_INSS", "DAS_SIMPLES"] as const;
+        if (!CATEGORIAS_INTEGRA_CONTADOR.includes(tipoGuia as any)) {
+          return res.status(400).json({
+            error: `Integra Contador não suporta a categoria "${tipoGuia}". Apenas INSS (DCTFWEB_INSS) e Simples Nacional (DAS_SIMPLES) são permitidos.`,
+          });
         }
 
         if (!/^\d{6}$/.test(competencia)) {
@@ -883,12 +886,12 @@ export function setupRoutes(app: Express) {
         let isMock = false;
 
         try {
-          const token = await getSerproToken(config, certAgent);
+          const tokens = await getSerproToken(config, certAgent);
           const baseUrl = config.ambiente === "producao"
             ? "https://gateway.apiserpro.serpro.gov.br/integra-contador/v1"
             : "https://gateway.apiserpro.serpro.gov.br/integra-contador-trial/v1";
 
-          const apiResp = await serproPost(`${baseUrl}/Emitir`, token, payload, certAgent);
+          const apiResp = await serproPost(`${baseUrl}/Emitir`, tokens, payload, certAgent);
           if (!apiResp.ok) {
             const errBody = await apiResp.text();
             throw new Error(`SERPRO retornou ${apiResp.status}: ${errBody}`);
@@ -2171,4 +2174,3 @@ setInterval(() => {
 setTimeout(() => {
   runNotificationSweeper().catch(console.error);
 }, 10000);
-
