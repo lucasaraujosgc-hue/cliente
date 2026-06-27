@@ -66,6 +66,7 @@ export async function initDb() {
     await client.query(`ALTER TABLE "documents" ADD COLUMN IF NOT EXISTS "pix_code" text;`);
     await client.query(`ALTER TABLE "documents" ADD COLUMN IF NOT EXISTS "extracted_data" jsonb;`);
     await client.query(`ALTER TABLE "messages" ADD COLUMN IF NOT EXISTS "direction" text DEFAULT 'accountant_to_client' NOT NULL;`);
+    await client.query(`ALTER TABLE "scheduled_notifications" ADD COLUMN IF NOT EXISTS "schedule_time" text;`);
 
     await client.query(`
       CREATE TABLE IF NOT EXISTS "subscriptions" (
@@ -111,6 +112,7 @@ export async function initDb() {
         "title" text NOT NULL,
         "body" text NOT NULL,
         "schedule_day" integer,
+        "schedule_time" text,
         "last_sent" timestamp,
         "active" boolean DEFAULT true NOT NULL,
         "created_at" timestamp DEFAULT now() NOT NULL

@@ -122,6 +122,7 @@ export const scheduledNotifications = pgTable('scheduled_notifications', {
   title: text('title').notNull(),
   body: text('body').notNull(),
   scheduleDay: integer('schedule_day'),
+  scheduleTime: text('schedule_time'),
   lastSent: timestamp('last_sent'),
   active: boolean('active').default(true).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),

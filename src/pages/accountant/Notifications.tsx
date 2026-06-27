@@ -19,6 +19,7 @@ export function AccountantNotifications() {
     title: "Lembrete: Vencimento da Guia [NOME_GUIA]",
     body: "Olá! Lembramos que sua guia [NOME_GUIA] vence em [VENCIMENTO]. Efetue o pagamento para evitar multas.",
     scheduleDay: "5", // Default day of month for recurrent
+    scheduleTime: "09:00", // Default time
   });
 
   // List of active scheduled notification rules
@@ -110,7 +111,8 @@ export function AccountantNotifications() {
           type: formScheduled.type,
           title: formScheduled.title,
           body: formScheduled.body,
-          scheduleDay: formScheduled.type === "recurrent" ? formScheduled.scheduleDay : null
+          scheduleDay: formScheduled.type === "recurrent" ? formScheduled.scheduleDay : null,
+          scheduleTime: formScheduled.scheduleTime
         })
       });
       if (res.ok) {
@@ -122,7 +124,8 @@ export function AccountantNotifications() {
           type: "3_days_before",
           title: "Lembrete: Vencimento da Guia [NOME_GUIA]",
           body: "Olá! Lembramos que sua guia [NOME_GUIA] vence em [VENCIMENTO]. Efetue o pagamento para evitar multas.",
-          scheduleDay: "5"
+          scheduleDay: "5",
+          scheduleTime: "09:00"
         });
       } else {
         const data = await res.json();
@@ -425,6 +428,18 @@ export function AccountantNotifications() {
                   </div>
                 )}
 
+                {formScheduled.type !== "on_file_available" && (
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-500 mb-1">Horário de Envio (Brasília UTC-3)</label>
+                    <input
+                      type="time"
+                      value={formScheduled.scheduleTime}
+                      onChange={e => setFormScheduled({...formScheduled, scheduleTime: e.target.value})}
+                      className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+                )}
+
                 <div>
                   <label className="block text-xs font-semibold text-slate-500 mb-1">Título do Alerta</label>
                   <input 
@@ -498,7 +513,10 @@ export function AccountantNotifications() {
                       
                       <div className="flex items-center justify-between pt-2 border-t border-slate-100/50 dark:border-slate-800/50 text-[10px] text-slate-400">
                         <span>Foco: <strong>{getClientName(rule.clientId)}</strong></span>
-                        {rule.scheduleDay && <span>Dia de Envio: <strong>Todo dia {rule.scheduleDay}</strong></span>}
+                        <div className="flex gap-3">
+                          {rule.scheduleDay && <span>Dia de Envio: <strong>Todo dia {rule.scheduleDay}</strong></span>}
+                          {rule.scheduleTime && <span>Horário: <strong>{rule.scheduleTime}</strong></span>}
+                        </div>
                       </div>
                     </div>
                   ))

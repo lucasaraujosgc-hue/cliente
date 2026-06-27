@@ -179,6 +179,29 @@ function isUuid(str: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
 }
 
+async function sendClientNotification(clientId: string, title: string, body: string) {
+  // Envia push notification
+  const subs = await db.select().from(subscriptions).where(eq(subscriptions.clientId, clientId));
+  const payload = JSON.stringify({ title, body });
+  
+  for (const sub of subs) {
+    try {
+      await webpush.sendNotification(sub.subscriptionObject as any, payload);
+    } catch (err: any) {
+      if (err.statusCode === 410 || err.statusCode === 404) {
+        await db.delete(subscriptions).where(eq(subscriptions.id, sub.id));
+      }
+    }
+  }
+
+  // Registra no painel como mensagem do contador
+  await db.insert(messages).values({
+    clientId: clientId,
+    content: `**${title}**\n${body}`,
+    direction: "accountant_to_client"
+  });
+}
+
 // ── Helper HTTP nativo (evita problemas com node-fetch ESM) ──────────────────
 function httpsPost(
   urlStr: string,
@@ -396,14 +419,7 @@ export function setupRoutes(app: Express) {
                                        .replace(/\[CATEGORIA\]/g, newDoc[0].category)
                                        .replace(/\[VENCIMENTO\]/g, newDoc[0].dueDate || "N/A");
           
-          await db.insert(notifications).values({
-            userId: newDoc[0].clientId,
-            title,
-            body,
-            type: "novo_documento_disponivel",
-            status: "unread",
-            createdAt: new Date(),
-          });
+          await sendClientNotification(newDoc[0].clientId, title, body);
         }
       }
 
@@ -1333,14 +1349,7 @@ export function setupRoutes(app: Express) {
                                          .replace(/\[CATEGORIA\]/g, doc.category)
                                          .replace(/\[VENCIMENTO\]/g, updatedDoc.dueDate || "N/A");
             
-            await db.insert(notifications).values({
-              userId: doc.clientId,
-              title,
-              body,
-              type: "recalculo_disponivel",
-              status: "unread",
-              createdAt: new Date(),
-            });
+            await sendClientNotification(doc.clientId, title, body);
           }
         }
 
@@ -2139,7 +2148,7 @@ export function setupRoutes(app: Express) {
     verifyAccountantAuth,
     async (req, res) => {
       try {
-        const { clientId, type, title, body, scheduleDay } = req.body;
+        const { clientId, type, title, body, scheduleDay, scheduleTime } = req.body;
         if (!type || !title || !body) {
           return res.status(400).json({ error: "Campos obrigatórios: type, title, body" });
         }
@@ -2152,6 +2161,7 @@ export function setupRoutes(app: Express) {
             title,
             body,
             scheduleDay: scheduleDay ? parseInt(scheduleDay) : null,
+            scheduleTime: scheduleTime || null,
             active: true,
           })
           .returning();
@@ -2246,15 +2256,17 @@ async function sendPushToClients(clientId: string | null, title: string, body: s
 }
 
 async function runNotificationSweeper() {
-  const today = new Date();
-  const todayStr = format(today, "yyyy-MM-dd");
+  const now = new Date();
+  const todayStr = format(now, "yyyy-MM-dd");
+
+  const brTimeStr = new Intl.DateTimeFormat('pt-BR', {
+    timeZone: 'America/Sao_Paulo',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+  }).format(now);
   
-  if (lastSweepDate === todayStr) {
-    return; // Já rodou hoje
-  }
-  lastSweepDate = todayStr;
-  
-  console.log(`[Notification Sweeper] Iniciando varredura diária: ${todayStr}`);
+  console.log(`[Notification Sweeper] Iniciando varredura (Hora BSB: ${brTimeStr})`);
   try {
     const activeRules = await db
       .select()
@@ -2262,21 +2274,22 @@ async function runNotificationSweeper() {
       .where(eq(scheduledNotifications.active, true));
 
     for (const rule of activeRules) {
+      if (rule.scheduleTime && brTimeStr < rule.scheduleTime) {
+        continue;
+      }
+      
+      const lastSent = rule.lastSent;
+      const alreadySentToday = lastSent && format(lastSent, "yyyy-MM-dd") === todayStr;
+      
+      if (alreadySentToday) continue;
+
+      let sentAny = false;
+
       if (rule.type === "recurrent") {
-        if (rule.scheduleDay && today.getDate() === rule.scheduleDay) {
-          const lastSent = rule.lastSent;
-          const alreadySentThisMonth = lastSent && 
-            lastSent.getMonth() === today.getMonth() && 
-            lastSent.getFullYear() === today.getFullYear();
-            
-          if (!alreadySentThisMonth) {
-            console.log(`[Notification Sweeper] Disparando lembrete recorrente "${rule.title}"`);
-            await sendPushToClients(rule.clientId, rule.title, rule.body);
-            await db
-              .update(scheduledNotifications)
-              .set({ lastSent: today })
-              .where(eq(scheduledNotifications.id, rule.id));
-          }
+        if (rule.scheduleDay && now.getDate() === rule.scheduleDay) {
+           console.log(`[Notification Sweeper] Disparando lembrete recorrente "${rule.title}"`);
+           await sendPushToClients(rule.clientId, rule.title, rule.body);
+           sentAny = true;
         }
       } else if (rule.type === "3_days_before" || rule.type === "on_due_date") {
         const targetDays = rule.type === "3_days_before" ? 3 : 0;
@@ -2297,7 +2310,7 @@ async function runNotificationSweeper() {
         for (const doc of docs) {
           if (doc.status === "paid" || !doc.dueDate) continue;
           
-          const diff = getDaysDiff(doc.dueDate, today);
+          const diff = getDaysDiff(doc.dueDate, now);
           if (diff === targetDays) {
             const dynamicBody = rule.body
               .replace(/\[NOME_GUIA\]/g, doc.title)
@@ -2309,8 +2322,24 @@ async function runNotificationSweeper() {
 
             console.log(`[Notification Sweeper] Enviando alerta para guia "${doc.title}" (vence em ${diff} dias)`);
             await sendPushToClients(doc.clientId, dynamicTitle, dynamicBody);
+            sentAny = true;
           }
         }
+      } else {
+        // Para tipos não mapeados aqui
+      }
+
+      if (sentAny) {
+         await db
+           .update(scheduledNotifications)
+           .set({ lastSent: now })
+           .where(eq(scheduledNotifications.id, rule.id));
+      } else if (rule.type !== "recurrent" || now.getDate() !== rule.scheduleDay) {
+         // Para 3_days_before/on_due_date que não enviaram nada hoje, nós podemos
+         // ou marcar como verificado hoje para não rodar de novo na próxima meia hora,
+         // ou não marcar e deixar rodar depois. Se deixarmos rodar depois, 
+         // se alguém enviar uma nova guia, ela pode ser pega! Isso é bom.
+         // Porém, pra não imprimir o log toda hora, maybe it's fine.
       }
     }
   } catch (err) {
