@@ -23,6 +23,7 @@
     "express": "^4.21.2",
     "file-saver": "^2.0.5",
     "jsonwebtoken": "^9.0.3",
+    "@napi-rs/canvas": "^0.1.52",
     "jsqr": "^1.4.0",
     "jszip": "^3.10.1",
     "lucide-react": "^0.546.0",
