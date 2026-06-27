@@ -1,93 +1,259 @@
-import path from "path";
 import jsQR from "jsqr";
-import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";
+import { exec } from "child_process";
+import { promisify } from "util";
+import { promises as fs } from "fs";
+import path from "path";
+import os from "os";
+import { createCanvas, loadImage } from "@napi-rs/canvas";
 
-const standardFontDataUrl = `${path
-  .join(process.cwd(), "node_modules", "pdfjs-dist", "standard_fonts")
-  .replace(/\\/g, "/")}/`;
+const execAsync = promisify(exec);
 
-const pixRegex =
-  /000201[\s\S]+?(?:BR\.GOV\.BCB\.PIX|br\.gov\.bcb\.pix)[\s\S]+?6304[A-Fa-f0-9]{4}/i;
+// Configurações centralizadas
+const CONFIG = {
+  POPPLER_DPI: 450,
+  MAX_PAGES: 3,
+  TEXT_EXTRACT_TIMEOUT: 5000,
+  TEXT_EXTRACT_MAX_BUFFER: 10 * 1024 * 1024,
+  PDF_CONVERT_MAX_BUFFER: 50 * 1024 * 1024,
+  QR_SCALES: [1, 2, 4],
+  THRESHOLDS: [100, 128, 150, 180, 210, 220], // Mais opções para bancos diferentes
+  CROPS: [
+    { x1: 0.02, y1: 0.08, x2: 0.4, y2: 0.45 },
+    { x1: 0.03, y1: 0.13, x2: 0.25, y2: 0.38 },
+    { x1: 0.05, y1: 0.21, x2: 0.32, y2: 0.43 },
+    { x1: 0.82, y1: 0.86, x2: 0.93, y2: 0.94 },
+    { x1: 0.35, y1: 0.75, x2: 0.65, y2: 0.98 },
+  ],
+};
 
-type CanvasModule = typeof import("@napi-rs/canvas");
-
-let canvasModulePromise: Promise<CanvasModule | null> | null = null;
+// ==================== UTILITÁRIOS ====================
 
 function normalizePixPayload(value: string | null | undefined): string | null {
   if (!value) return null;
 
-  const cleaned = value.replace(/\s+/g, "").trim();
+  // Remove espaços, quebras de linha e caracteres não imprimíveis
+  let cleaned = value
+    .replace(/[\s\r\n\t]+/g, "")
+    .replace(/[^\x20-\x7E]/g, "") // Remove caracteres não-ASCII
+    .trim();
+  
   if (!cleaned.startsWith("000201")) return null;
 
+  // Verifica se contém o identificador PIX (case insensitive)
   const upper = cleaned.toUpperCase();
-  if (!upper.includes("BR.GOV.BCB.PIX") && !upper.includes("FGTS")) {
+  if (!upper.includes("BCB.PIX") && !upper.includes("FGTS")) {
     return null;
   }
 
+  // Extrai o CRC final (últimos 4 dígitos)
   const crcMatches = [...cleaned.matchAll(/6304[A-Fa-f0-9]{4}/gi)];
   if (crcMatches.length === 0) return null;
 
+  // Pega a última ocorrência (mais confiável)
   const lastMatch = crcMatches[crcMatches.length - 1];
-  return cleaned.substring(0, lastMatch.index! + lastMatch[0].length);
+  const endIndex = lastMatch.index! + lastMatch[0].length;
+  
+  return cleaned.substring(0, endIndex);
 }
 
 function extractPixFromText(text: string): string | null {
-  const textMatch = text.match(pixRegex);
-  if (textMatch) {
-    return normalizePixPayload(textMatch[0]);
+  if (!text || text.length < 20) return null;
+
+  // Regex mais flexível
+  const regexes = [
+    /000201(?:[0-9]{2}[^0-9]{1,}[0-9]{2})*?BCB\.PIX(?:[0-9]{2}[^0-9]{1,}[0-9]{2})*?6304[A-Fa-f0-9]{4}/i,
+    /000201[\s\S]+?(?:BR\.GOV\.BCB\.PIX|BCB\.PIX)[\s\S]+?6304[A-Fa-f0-9]{4}/i,
+  ];
+
+  for (const regex of regexes) {
+    const match = text.match(regex);
+    if (match) {
+      const normalized = normalizePixPayload(match[0]);
+      if (normalized) return normalized;
+    }
   }
 
-  const cleaned = text.replace(/\s+/g, "");
-  const cleanedMatch = cleaned.match(pixRegex);
-  if (cleanedMatch) {
-    return normalizePixPayload(cleanedMatch[0]);
-  }
-
+  // Busca manual por 000201
+  const cleaned = text.replace(/[\s\r\n\t]+/g, "");
   const start = cleaned.indexOf("000201");
   if (start === -1) return null;
-
-  return normalizePixPayload(cleaned.substring(start));
+  
+  const candidate = cleaned.substring(start, start + 300);
+  return normalizePixPayload(candidate);
 }
 
-function toRgbaData(imgData: any): Uint8ClampedArray | null {
-  const width = Number(imgData?.width || 0);
-  const height = Number(imgData?.height || 0);
-  const source = imgData?.data;
+// ==================== POPPLER CHECKS ====================
 
-  if (!width || !height || !source) return null;
+async function checkPopplerInstalled(): Promise<boolean> {
+  try {
+    await execAsync("which pdftoppm");
+    return true;
+  } catch {
+    return false;
+  }
+}
 
-  const data =
-    source instanceof Uint8ClampedArray
-      ? source
-      : source instanceof Uint8Array
-        ? new Uint8ClampedArray(source)
-        : new Uint8ClampedArray(source);
+// ==================== TEMP DIR ====================
 
-  const pixelCount = width * height;
-  if (data.length === pixelCount * 4) return data;
+async function createTempDir(): Promise<string> {
+  return await fs.mkdtemp(path.join(os.tmpdir(), "pix-"));
+}
 
-  const rgbaData = new Uint8ClampedArray(pixelCount * 4);
-  if (data.length === pixelCount * 3) {
-    for (let sourceIndex = 0, targetIndex = 0; sourceIndex < data.length; sourceIndex += 3, targetIndex += 4) {
-      rgbaData[targetIndex] = data[sourceIndex];
-      rgbaData[targetIndex + 1] = data[sourceIndex + 1];
-      rgbaData[targetIndex + 2] = data[sourceIndex + 2];
-      rgbaData[targetIndex + 3] = 255;
+async function cleanupTempDir(tempDir: string): Promise<void> {
+  try {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  } catch (error) {
+    // Ignora erros de limpeza
+  }
+}
+
+// ==================== EXTRAÇÃO DE TEXTO ====================
+
+async function extractTextFromPdf(
+  pdfPath: string, 
+  maxPages: number = CONFIG.MAX_PAGES
+): Promise<string> {
+  const strategies = [
+    // -raw preserva melhor o payload PIX
+    async () => {
+      const { stdout } = await execAsync(
+        `pdftotext -raw -f 1 -l ${maxPages} "${pdfPath}" -`,
+        {
+          maxBuffer: CONFIG.TEXT_EXTRACT_MAX_BUFFER,
+          timeout: CONFIG.TEXT_EXTRACT_TIMEOUT,
+        }
+      );
+      return stdout;
+    },
+    // -layout para tabelas
+    async () => {
+      const { stdout } = await execAsync(
+        `pdftotext -layout -f 1 -l ${maxPages} "${pdfPath}" -`,
+        {
+          maxBuffer: CONFIG.TEXT_EXTRACT_MAX_BUFFER,
+          timeout: CONFIG.TEXT_EXTRACT_TIMEOUT,
+        }
+      );
+      return stdout;
+    },
+    // Sem opções especiais
+    async () => {
+      const { stdout } = await execAsync(
+        `pdftotext -f 1 -l ${maxPages} "${pdfPath}" -`,
+        {
+          maxBuffer: CONFIG.TEXT_EXTRACT_MAX_BUFFER,
+          timeout: CONFIG.TEXT_EXTRACT_TIMEOUT,
+        }
+      );
+      return stdout;
     }
-    return rgbaData;
+  ];
+
+  for (const strategy of strategies) {
+    try {
+      const text = await strategy();
+      if (text && text.length > 10) {
+        return text;
+      }
+    } catch (error) {
+      continue;
+    }
   }
 
-  if (data.length === pixelCount) {
-    for (let sourceIndex = 0, targetIndex = 0; sourceIndex < data.length; sourceIndex++, targetIndex += 4) {
-      rgbaData[targetIndex] = data[sourceIndex];
-      rgbaData[targetIndex + 1] = data[sourceIndex];
-      rgbaData[targetIndex + 2] = data[sourceIndex];
-      rgbaData[targetIndex + 3] = 255;
-    }
-    return rgbaData;
-  }
+  return '';
+}
 
-  return null;
+// ==================== EXTRAÇÃO DE IMAGENS COM pdfimages ====================
+
+async function extractImagesFromPdf(
+  pdfPath: string,
+  tempDir: string,
+  maxPages: number = CONFIG.MAX_PAGES
+): Promise<string[]> {
+  try {
+    const outputPrefix = path.join(tempDir, 'img');
+    const cmd = `pdfimages -png -f 1 -l ${maxPages} "${pdfPath}" "${outputPrefix}"`;
+    
+    await execAsync(cmd, {
+      maxBuffer: CONFIG.PDF_CONVERT_MAX_BUFFER,
+    });
+
+    // Lista as imagens extraídas
+    const files = await fs.readdir(tempDir);
+    const imageFiles = files
+      .filter(f => f.startsWith('img-') && (f.endsWith('.png') || f.endsWith('.jpg') || f.endsWith('.jpeg')))
+      .sort()
+      .map(f => path.join(tempDir, f));
+
+    return imageFiles;
+  } catch (error) {
+    // pdfimages pode falhar em alguns PDFs, retorna array vazio
+    return [];
+  }
+}
+
+// ==================== CONVERSÃO DE PÁGINA INDIVIDUAL ====================
+
+async function convertPdfPageToImage(
+  pdfPath: string,
+  tempDir: string,
+  pageNumber: number,
+  dpi: number = CONFIG.POPPLER_DPI
+): Promise<string | null> {
+  const outputPath = path.join(tempDir, `page-${pageNumber}.png`);
+  const cmd = `pdftoppm -png -r ${dpi} -f ${pageNumber} -l ${pageNumber} "${pdfPath}" "${path.join(tempDir, 'page')}"`;
+
+  try {
+    await execAsync(cmd, {
+      maxBuffer: CONFIG.PDF_CONVERT_MAX_BUFFER,
+    });
+
+    // Verifica se o arquivo foi gerado
+    const files = await fs.readdir(tempDir);
+    const generatedFile = files.find(f => f.startsWith('page-') && f.endsWith('.png'));
+    
+    if (generatedFile) {
+      return path.join(tempDir, generatedFile);
+    }
+    
+    return null;
+  } catch (error) {
+    return null;
+  }
+}
+
+// ==================== PRÉ-PROCESSAMENTO DE IMAGENS ====================
+
+function applyBinarization(
+  data: Uint8ClampedArray,
+  threshold: number
+): Uint8ClampedArray {
+  const result = new Uint8ClampedArray(data.length);
+  
+  for (let i = 0; i < data.length; i += 4) {
+    const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+    const value = gray > threshold ? 255 : 0;
+    result[i] = value;
+    result[i + 1] = value;
+    result[i + 2] = value;
+    result[i + 3] = data[i + 3];
+  }
+  
+  return result;
+}
+
+function toGrayscale(data: Uint8ClampedArray): Uint8ClampedArray {
+  const result = new Uint8ClampedArray(data.length);
+  
+  for (let i = 0; i < data.length; i += 4) {
+    const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+    result[i] = gray;
+    result[i + 1] = gray;
+    result[i + 2] = gray;
+    result[i + 3] = data[i + 3];
+  }
+  
+  return result;
 }
 
 function scaleNearest(
@@ -98,8 +264,8 @@ function scaleNearest(
 ): { data: Uint8ClampedArray; width: number; height: number } {
   if (scale <= 1) return { data, width, height };
 
-  const scaledWidth = width * scale;
-  const scaledHeight = height * scale;
+  const scaledWidth = Math.round(width * scale);
+  const scaledHeight = Math.round(height * scale);
   const scaled = new Uint8ClampedArray(scaledWidth * scaledHeight * 4);
 
   for (let y = 0; y < scaledHeight; y++) {
@@ -118,174 +284,172 @@ function scaleNearest(
   return { data: scaled, width: scaledWidth, height: scaledHeight };
 }
 
-function decodePixFromRgba(
+// ==================== DECODIFICAÇÃO DE QR CODE ====================
+
+async function decodeQRFromImageData(
   data: Uint8ClampedArray,
   width: number,
-  height: number,
-): string | null {
-  const scales = width < 180 || height < 180 ? [1, 2, 4] : [1];
-
-  for (const scale of scales) {
-    const candidate = scaleNearest(data, width, height, scale);
-    const code = jsQR(candidate.data, candidate.width, candidate.height, {
-      inversionAttempts: "attemptBoth",
-    });
-    const pixCode = normalizePixPayload(code?.data);
-    if (pixCode) return pixCode;
-  }
-
-  return null;
-}
-
-async function getCanvasModule(): Promise<CanvasModule | null> {
-  if (!canvasModulePromise) {
-    canvasModulePromise = import("@napi-rs/canvas").catch((err) => {
-      console.warn(
-        "PDF QR render fallback indisponivel: @napi-rs/canvas nao carregou.",
-        err,
-      );
-      return null;
-    });
-  }
-
-  return canvasModulePromise;
-}
-
-async function getPdfImageObject(page: any, objId: string): Promise<any> {
-  if (page.objs?.has?.(objId)) {
-    return page.objs.get(objId);
-  }
-
-  return new Promise((resolve) => {
-    const timeout = setTimeout(() => resolve(null), 1000);
-    page.objs.get(objId, (data: any) => {
-      clearTimeout(timeout);
-      resolve(data);
-    });
-  });
-}
-
-async function extractPixFromEmbeddedImages(page: any): Promise<string | null> {
-  const ops = await page.getOperatorList();
-
-  for (let i = 0; i < ops.fnArray.length; i++) {
-    const fn = ops.fnArray[i];
-    let imgData: any = null;
-
-    if (
-      fn === pdfjsLib.OPS.paintInlineImageXObject ||
-      fn === pdfjsLib.OPS.paintInlineImageXObjectGroup
-    ) {
-      imgData = ops.argsArray[i]?.[0];
-    }
-
-    if (
-      fn === pdfjsLib.OPS.paintImageXObject ||
-      fn === pdfjsLib.OPS.paintImageXObjectRepeat
-    ) {
-      const objId = ops.argsArray[i]?.[0];
-      if (!objId) continue;
-
-      try {
-        imgData = await getPdfImageObject(page, objId);
-      } catch {
-        imgData = null;
-      }
-    }
-
-    if (!imgData?.width || !imgData?.height) continue;
-
-    const rgbaData = toRgbaData(imgData);
-    if (!rgbaData) continue;
-
-    const pixCode = decodePixFromRgba(rgbaData, imgData.width, imgData.height);
-    if (pixCode) return pixCode;
-  }
-
-  return null;
-}
-
-async function extractPixFromRenderedCrops(page: any): Promise<string | null> {
-  const canvasModule = await getCanvasModule();
-  if (!canvasModule) return null;
-
-  const crops = [
-    { scale: 4.0, x1: 0.02, y1: 0.08, x2: 0.4, y2: 0.45 },
-    { scale: 4.0, x1: 0.03, y1: 0.13, x2: 0.25, y2: 0.38 },
-    { scale: 4.0, x1: 0.05, y1: 0.21, x2: 0.32, y2: 0.43 },
-    { scale: 4.0, x1: 0.82, y1: 0.86, x2: 0.93, y2: 0.94 },
-    { scale: 3.0, x1: 0.35, y1: 0.75, x2: 0.65, y2: 0.98 },
-    { scale: 2.5, x1: 0, y1: 0, x2: 1, y2: 1 },
-    { scale: 1.5, x1: 0, y1: 0, x2: 1, y2: 1 },
+  height: number
+): Promise<string | null> {
+  // Prepara diferentes transformações
+  const transformations: Array<{ data: Uint8ClampedArray; label: string }> = [
+    { data, label: 'original' },
+    { data: toGrayscale(data), label: 'grayscale' },
   ];
 
-  for (const crop of crops) {
-    const viewport = page.getViewport({ scale: crop.scale });
-    const cropX = viewport.width * crop.x1;
-    const cropY = viewport.height * crop.y1;
-    const cropW = Math.max(1, Math.round(viewport.width * (crop.x2 - crop.x1)));
-    const cropH = Math.max(1, Math.round(viewport.height * (crop.y2 - crop.y1)));
+  // Adiciona binarização com diferentes thresholds
+  for (const threshold of CONFIG.THRESHOLDS) {
+    transformations.push({
+      data: applyBinarization(data, threshold),
+      label: `binary_${threshold}`
+    });
+  }
 
-    const canvas = canvasModule.createCanvas(cropW, cropH);
-    const context = canvas.getContext("2d");
+  // Tenta cada transformação
+  for (const transform of transformations) {
+    const scales = width < 200 || height < 200 ? CONFIG.QR_SCALES : [1];
+    
+    for (const scale of scales) {
+      let targetData = transform.data;
+      let targetWidth = width;
+      let targetHeight = height;
 
-    await page.render({
-      canvasContext: context,
-      viewport,
-      transform: [1, 0, 0, 1, -cropX, -cropY],
-    } as any).promise;
+      if (scale > 1) {
+        const scaled = scaleNearest(transform.data, width, height, scale);
+        targetData = scaled.data;
+        targetWidth = scaled.width;
+        targetHeight = scaled.height;
+      }
 
-    const imageData = context.getImageData(0, 0, cropW, cropH);
-    const pixCode = decodePixFromRgba(
-      new Uint8ClampedArray(imageData.data),
-      imageData.width,
-      imageData.height,
-    );
+      const code = jsQR(targetData, targetWidth, targetHeight, {
+        inversionAttempts: "attemptBoth",
+      });
 
-    if (pixCode) return pixCode;
+      if (code?.data) {
+        const pixCode = normalizePixPayload(code.data);
+        if (pixCode) return pixCode;
+      }
+    }
   }
 
   return null;
 }
 
-export async function extractPixCodeFromPdf(buffer: Buffer): Promise<string | null> {
-  let pdfDocument: any = null;
-
+async function decodeQRFromImage(
+  imagePath: string,
+  crops?: Array<{ x1: number; y1: number; x2: number; y2: number }>
+): Promise<string | null> {
   try {
-    const data = new Uint8Array(buffer);
-    const loadingTask = pdfjsLib.getDocument({
-      data,
-      disableFontFace: true,
-      disableRange: true,
-      standardFontDataUrl,
+    const image = await loadImage(imagePath);
+    const width = image.width;
+    const height = image.height;
 
-      useWasm: false,
-    });
+    // Se não houver crops, usa a imagem inteira
+    const regions = crops && crops.length > 0 
+      ? crops.map(crop => ({
+          x: Math.round(width * crop.x1),
+          y: Math.round(height * crop.y1),
+          w: Math.round(width * (crop.x2 - crop.x1)),
+          h: Math.round(height * (crop.y2 - crop.y1)),
+        }))
+      : [{ x: 0, y: 0, w: width, h: height }];
 
-    pdfDocument = await loadingTask.promise;
-    const numPages = Math.min(3, pdfDocument.numPages);
+    // Processa crops em paralelo
+    const results = await Promise.all(
+      regions.map(async (region) => {
+        // Valida região
+        const rx = Math.max(0, Math.min(region.x, width - 1));
+        const ry = Math.max(0, Math.min(region.y, height - 1));
+        const rw = Math.min(region.w, width - rx);
+        const rh = Math.min(region.h, height - ry);
 
-    for (let i = 1; i <= numPages; i++) {
-      const page = await pdfDocument.getPage(i);
+        if (rw < 10 || rh < 10) return null;
 
-      const textContent = await page.getTextContent();
-      const fullText = textContent.items.map((item: any) => item.str).join(" ");
+        // Cria canvas apenas para a região (economiza memória)
+        const canvas = createCanvas(rw, rh);
+        const ctx = canvas.getContext('2d');
+        
+        // Desenha apenas a região recortada
+        ctx.drawImage(image, rx, ry, rw, rh, 0, 0, rw, rh);
+        
+        const imageData = ctx.getImageData(0, 0, rw, rh);
+        const data = new Uint8ClampedArray(imageData.data);
+
+        return await decodeQRFromImageData(data, rw, rh);
+      })
+    );
+
+    // Retorna o primeiro resultado encontrado
+    for (const result of results) {
+      if (result) return result;
+    }
+
+    return null;
+  } catch (error) {
+    console.warn(`Erro ao decodificar QR da imagem ${imagePath}:`, error);
+    return null;
+  }
+}
+
+// ==================== FUNÇÃO PRINCIPAL ====================
+
+export async function extractPixCodeFromPdf(buffer: Buffer): Promise<string | null> {
+  let tempDir: string | null = null;
+  
+  try {
+    // Verifica Poppler
+    const hasPoppler = await checkPopplerInstalled();
+    if (!hasPoppler) {
+      console.warn('Poppler não está instalado. Execute: apt-get install poppler-utils');
+      return null;
+    }
+
+    // Cria diretório temporário
+    tempDir = await createTempDir();
+    const pdfPath = path.join(tempDir, 'input.pdf');
+    await fs.writeFile(pdfPath, buffer);
+
+    // PASSO 1: Tenta extrair do texto
+    const fullText = await extractTextFromPdf(pdfPath);
+    if (fullText) {
       const textPix = extractPixFromText(fullText);
       if (textPix) return textPix;
-
-      const embeddedImagePix = await extractPixFromEmbeddedImages(page);
-      if (embeddedImagePix) return embeddedImagePix;
-
-      const renderedPix = await extractPixFromRenderedCrops(page);
-      if (renderedPix) return renderedPix;
-
-      page.cleanup?.();
     }
-  } catch (err) {
-    console.error("Error reading PDF for QR Code:", err);
-  } finally {
-    await pdfDocument?.destroy?.();
-  }
 
-  return null;
+    // PASSO 2: Tenta extrair imagens com pdfimages
+    const imageFiles = await extractImagesFromPdf(pdfPath, tempDir);
+    for (const imagePath of imageFiles) {
+      // Primeiro com crops
+      let pixCode = await decodeQRFromImage(imagePath, CONFIG.CROPS);
+      if (pixCode) return pixCode;
+      
+      // Depois imagem inteira
+      pixCode = await decodeQRFromImage(imagePath);
+      if (pixCode) return pixCode;
+    }
+
+    // PASSO 3: Renderiza páginas uma por uma (economiza recursos)
+    for (let page = 1; page <= CONFIG.MAX_PAGES; page++) {
+      const imagePath = await convertPdfPageToImage(pdfPath, tempDir, page);
+      if (!imagePath) continue;
+
+      // Primeiro com crops
+      let pixCode = await decodeQRFromImage(imagePath, CONFIG.CROPS);
+      if (pixCode) return pixCode;
+      
+      // Depois imagem inteira
+      pixCode = await decodeQRFromImage(imagePath);
+      if (pixCode) return pixCode;
+    }
+
+    return null;
+
+  } catch (error) {
+    console.error('Erro ao extrair PIX do PDF:', error);
+    return null;
+  } finally {
+    if (tempDir) {
+      await cleanupTempDir(tempDir);
+    }
+  }
 }
