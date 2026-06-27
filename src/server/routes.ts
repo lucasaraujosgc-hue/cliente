@@ -851,7 +851,13 @@ export function setupRoutes(app: Express) {
         console.log(`[SERPRO API] Enviando POST /Emitir para tipo ${tipoGuia}`);
         
         let certAgent;
-        if (config.ambiente === "producao" && config.certPath) {
+        if (config.ambiente === "producao") {
+          if (!config.certPath) {
+            return res.status(400).json({
+              error: "Certificado digital nao configurado. Reenvie o arquivo .pfx/.p12 nas configuracoes do Integra Contador.",
+            });
+          }
+
           try {
             const pfx = await fs.promises.readFile(config.certPath);
             certAgent = new https.Agent({
@@ -859,8 +865,15 @@ export function setupRoutes(app: Express) {
               passphrase: config.certSenha || "",
               rejectUnauthorized: true,
             });
-          } catch (err) {
-            console.error("Erro ao ler certificado do disco:", err);
+          } catch (err: any) {
+            console.error("Certificado SERPRO configurado nao pode ser lido:", {
+              path: config.certPath,
+              code: err?.code,
+              message: err?.message,
+            });
+            return res.status(400).json({
+              error: "Certificado digital nao encontrado no servidor. Reenvie o arquivo .pfx/.p12 nas configuracoes do Integra Contador.",
+            });
           }
         }
 
@@ -902,6 +915,15 @@ export function setupRoutes(app: Express) {
           pdfBase64 = "JVBERi0xLjQKJebgp4K3CjEgMCBvYmoKPDwKL1R5cGUgL0NhdGFsb2cKL1BhZ2VzIDIgMCBSCj4+CmVuZG9iagoyIDAgb2JqCjw8Ci9UeXBlIC9QYWdlcwovS2lkcyBbMyAwIFJdCi9Db3VudCAxCj4+CmVuZG9iajozIDAgb2JqCjw8Ci9UeXBlIC9QYWdlCi9QYXJlbnQgMiAwIFIKL01lZGlhQm94IFswIDAgNTk1IDg0Ml0KL1Jlc291cmNlcyA8PAovRm9udCA8PAovRjEgNCAwIFIKPj4KPj4KL0NvbnRlbnRzIDUgMCBSCj4+CmVuZG9iago0IDAgb2JqCjw8Ci9UeXBlIC9Gb250Ci9TdWJ0eXBlIC9UeXBlMQovQmFzZUZvbnQgL0hlbHZldGljYQo+PgplbmRvYmoKNSAwIG9iago8PAovTGVuZ3RoIDYyCj4+CnN0cmVhbQpCVAovRjEgMTIgVGYKMTAwIDcwMCBUZAooR3VpYSByZWNhbGN1bGFkYSB2aWEgSW50ZWdyYSBDb250YWRvciAoU2ltdWxhZG8pLikgVGoKRVQKZW5kc3RyZWFtCmVuZG9iagp4cmVmCjAgNgowMDAwMDAwMDAwIDY1NTM1IGYgCjAwMDAwMDAwMTUgMDAwMDAgbiAKMDAwMDAwMDA2MCAwMDAwMCBuIAowMDAwMDAwMTExIDAwMDAwIG4gCjAwMDAwMDAyNDQgMDAwMDAgbiAKMDAwMDAwMDMwNSAwMDAwMCBuIAp0cmFpbGVyCjw8Ci9Sb290IDEgMCBSCi9TaXplIDYKPj4Kc3RhcnR4cmVmCjQzNAolJUVPRgo=";
         }
 
+        const pdfBuffer = Buffer.from(pdfBase64, "base64");
+        let pixCode: string | null = null;
+        try {
+          const { extractPixCodeFromPdf } = await import("./qrExtractor");
+          pixCode = await extractPixCodeFromPdf(pdfBuffer);
+        } catch (err) {
+          console.warn("Nao foi possivel extrair o PIX do PDF da guia:", err);
+        }
+
         // Cálculo de nova data de vencimento (2 dias no futuro, pulando finais de semana)
         const calcDate = new Date();
         calcDate.setDate(calcDate.getDate() + 2);
@@ -931,6 +953,12 @@ export function setupRoutes(app: Express) {
         const fakePixCode =
           "00020126580014br.gov.bcb.pix0136a3bvv27flnh5204000053039865802BR5913Receita Federal6008Brasilia62070503***6304" +
           Math.floor(1000 + Math.random() * 9000);
+        if (!pixCode && isMock) {
+          pixCode = fakePixCode;
+        }
+        if (!pixCode) {
+          console.warn("[SERPRO API] Guia gerada sem PIX copia e cola extraido do PDF.");
+        }
 
         let guiaId: number;
         let realFileUrl: string;
@@ -964,7 +992,7 @@ export function setupRoutes(app: Express) {
           
           const pdfFile = `guia_${tipoGuia}_${clientId}_${competencia}_${guiaId}.pdf`;
           const pdfPath = path.join(pdfDir, pdfFile);
-          await fs.promises.writeFile(pdfPath, Buffer.from(pdfBase64, "base64"));
+          await fs.promises.writeFile(pdfPath, pdfBuffer);
           
           await tx
             .update(guiasGeradas)
@@ -978,7 +1006,7 @@ export function setupRoutes(app: Express) {
               .set({
                 dueDate: vencFormatado,
                 fileUrl: realFileUrl,
-                pixCode: fakePixCode,
+                pixCode,
                 status: "GUIA_ATUALIZADA",
               })
               .where(eq(documents.id, documentId));
@@ -995,7 +1023,7 @@ export function setupRoutes(app: Express) {
           dataVencimento: vencFormatado,
           valorTotal: valorTotal,
           pdfPath: realFileUrl!,
-          pixCode: fakePixCode,
+          pixCode,
           isMock,
         });
       } catch (e: any) {
@@ -1776,6 +1804,17 @@ export function setupRoutes(app: Express) {
         if (config.length === 0) {
           return res.json({ success: true, config: null });
         }
+
+        const certPath = config[0].certPath;
+        let certExists = false;
+        if (certPath) {
+          try {
+            await fs.promises.access(certPath, fs.constants.R_OK);
+            certExists = true;
+          } catch {
+            certExists = false;
+          }
+        }
         
         // Sanitiza dados confidenciais antes de retornar
         const sanitizedConfig = {
@@ -1786,7 +1825,8 @@ export function setupRoutes(app: Express) {
           ambiente: config[0].ambiente,
           updatedAt: config[0].updatedAt,
           hasSecret: !!config[0].consumerSecret,
-          hasCert: !!config[0].certPath,
+          hasCert: certExists,
+          certMissing: !!certPath && !certExists,
           hasCertSenha: !!config[0].certSenha,
         };
         
@@ -2131,3 +2171,4 @@ setInterval(() => {
 setTimeout(() => {
   runNotificationSweeper().catch(console.error);
 }, 10000);
+
