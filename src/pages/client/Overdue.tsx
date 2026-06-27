@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { format, isBefore, parseISO, startOfDay, differenceInDays } from "date-fns";
-import { AlertCircle, FileText, Download, CheckCircle, Clock, RotateCw, Calendar } from "lucide-react";
+import { AlertCircle, FileText, Download, CheckCircle, Clock, RotateCw, Calendar, DollarSign } from "lucide-react";
 import { PixScannerButton } from "../../components/PixScannerButton";
 import { GuiaAtualizarButton } from "../../components/GuiaAtualizarButton";
 
@@ -202,6 +202,14 @@ export function ClientOverdue() {
                           <Calendar className="w-3.5 h-3.5" />
                           Competência: {doc.competence}
                         </span>
+                      )}
+                      {doc.extractedData?.extractedValue && (
+                        <>
+                          <span>•</span>
+                          <span className="font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1">
+                            <DollarSign className="w-3 h-3 text-slate-400" /> {doc.extractedData.extractedValue.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                          </span>
+                        </>
                       )}
                     </div>
                   </div>

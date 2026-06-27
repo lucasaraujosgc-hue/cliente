@@ -6,8 +6,8 @@ export function AccountantNotifications() {
   const [clients, setClients] = useState<any[]>([]);
   const [selectedClientIds, setSelectedClientIds] = useState<string[]>([]);
   
-  // Tab control: 'imediato' or 'agendado'
-  const [activeTab, setActiveTab] = useState<'imediato' | 'agendado'>('imediato');
+  // Tab control: 'imediato', 'agendado', 'solicitacoes'
+  const [activeTab, setActiveTab] = useState<'imediato' | 'agendado' | 'solicitacoes'>('imediato');
 
   // Immediate notification form
   const [formImmediate, setFormImmediate] = useState({ title: "", body: "" });
@@ -15,7 +15,7 @@ export function AccountantNotifications() {
   // Scheduled notification form
   const [formScheduled, setFormScheduled] = useState({
     clientId: "",
-    type: "3_days_before", // 'recurrent', '3_days_before', 'on_due_date'
+    type: "3_days_before", // 'recurrent', '3_days_before', 'on_due_date', 'on_file_available'
     title: "Lembrete: Vencimento da Guia [NOME_GUIA]",
     body: "Olá! Lembramos que sua guia [NOME_GUIA] vence em [VENCIMENTO]. Efetue o pagamento para evitar multas.",
     scheduleDay: "5", // Default day of month for recurrent
@@ -23,6 +23,11 @@ export function AccountantNotifications() {
 
   // List of active scheduled notification rules
   const [scheduledRules, setScheduledRules] = useState<any[]>([]);
+
+  // List of pending recalculations
+  const [solicitacoes, setSolicitacoes] = useState<any[]>([]);
+  const [resolvingId, setResolvingId] = useState<string | null>(null);
+  const [resolveForm, setResolveForm] = useState({ valor: "", dueDate: "", file: null as File | null });
 
   const loadClients = () => {
     fetch("/api/accountant/clients", {
@@ -41,9 +46,19 @@ export function AccountantNotifications() {
       .catch(err => console.error("Erro ao carregar agendamentos:", err));
   };
 
+  const loadSolicitacoes = () => {
+    fetch("/api/accountant/solicitacoes", {
+      headers: { Authorization: `Bearer ${localStorage.getItem("accountantToken")}` }
+    })
+      .then(res => res.json())
+      .then(data => setSolicitacoes(data.solicitacoes || []))
+      .catch(err => console.error("Erro ao carregar solicitações:", err));
+  };
+
   useEffect(() => {
     loadClients();
     loadScheduledRules();
+    loadSolicitacoes();
   }, []);
 
   const handleSendImmediate = async (e: React.FormEvent) => {
@@ -160,11 +175,48 @@ export function AccountantNotifications() {
     return found ? found.name : "Cliente Desconhecido";
   };
 
+  const handleResolveSolicitacao = async (id: string) => {
+    if (!resolveForm.file) {
+        alert("Por favor, selecione o arquivo da nova guia.");
+        return;
+    }
+    
+    setLoading(true);
+    const formData = new FormData();
+    formData.append("file", resolveForm.file);
+    if (resolveForm.valor) formData.append("valor", resolveForm.valor);
+    if (resolveForm.dueDate) formData.append("dueDate", resolveForm.dueDate);
+
+    try {
+        const res = await fetch(`/api/accountant/solicitacoes/${id}`, {
+            method: "POST",
+            headers: {
+                Authorization: `Bearer ${localStorage.getItem("accountantToken")}`
+            },
+            body: formData
+        });
+
+        if (res.ok) {
+            alert("Guia enviada com sucesso ao cliente!");
+            setResolvingId(null);
+            setResolveForm({ valor: "", dueDate: "", file: null });
+            loadSolicitacoes();
+        } else {
+            const data = await res.json();
+            alert("Erro ao enviar guia: " + (data.error || "Erro desconhecido"));
+        }
+    } catch (err: any) {
+        alert("Erro de conexão: " + err.message);
+    }
+    setLoading(false);
+  };
+
   const getRuleTypeLabel = (type: string) => {
     switch (type) {
       case "recurrent": return "Recorrente Mensal";
       case "3_days_before": return "Faltando 3 Dias p/ Vencimento";
       case "on_due_date": return "No Dia do Vencimento";
+      case "on_file_available": return "Assim que a Guia for Disponibilizada";
       default: return type;
     }
   };
@@ -202,9 +254,19 @@ export function AccountantNotifications() {
         >
           <Clock className="w-3.5 h-3.5 inline mr-1.5" /> Alertas Inteligentes & Agendados
         </button>
+        <button
+          onClick={() => setActiveTab('solicitacoes')}
+          className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all ${
+            activeTab === 'solicitacoes'
+              ? "bg-white dark:bg-slate-800 text-slate-950 dark:text-white shadow-xs"
+              : "text-slate-500 hover:text-slate-800 dark:hover:text-slate-300"
+          }`}
+        >
+          <AlertTriangle className="w-3.5 h-3.5 inline mr-1.5" /> Solicitações de Recálculo
+        </button>
       </div>
 
-      {activeTab === 'imediato' ? (
+      {activeTab === 'imediato' && (
         /* TAB 1: ENVIO IMEDIATO */
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
           {/* Formulário de Envio */}
@@ -287,7 +349,9 @@ export function AccountantNotifications() {
             </div>
           </div>
         </div>
-      ) : (
+      )}
+
+      {activeTab === 'agendado' && (
         /* TAB 2: AGENDAMENTOS E ALERTAS AUTOMÁTICOS */
         <div className="space-y-8">
           
@@ -331,6 +395,9 @@ export function AccountantNotifications() {
                       } else if (t === "on_due_date") {
                         title = "⚠️ Vence Hoje: Guia [NOME_GUIA]";
                         body = "Atenção: A sua guia [NOME_GUIA] vence no dia de hoje ([VENCIMENTO]). Pague via Pix copiando o código no painel.";
+                      } else if (t === "on_file_available") {
+                        title = "Nova Guia Disponível: [CATEGORIA]";
+                        body = "Sua guia da categoria [CATEGORIA] está disponível no painel para pagamento. Vencimento: [VENCIMENTO].";
                       }
                       setFormScheduled({...formScheduled, type: t, title, body});
                     }}
@@ -339,6 +406,7 @@ export function AccountantNotifications() {
                     <option value="3_days_before">Faltando 3 Dias para Vencimento de Guias</option>
                     <option value="on_due_date">No Dia do Vencimento de Guias</option>
                     <option value="recurrent">Recorrente Mensal (Lembrete de Faturamento)</option>
+                    <option value="on_file_available">Assim que a guia for disponibilizada</option>
                   </select>
                 </div>
 
@@ -376,9 +444,9 @@ export function AccountantNotifications() {
                     onChange={e => setFormScheduled({...formScheduled, body: e.target.value})}
                     className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500 min-h-[100px]"
                   />
-                  {(formScheduled.type === "3_days_before" || formScheduled.type === "on_due_date") && (
+                  {(formScheduled.type === "3_days_before" || formScheduled.type === "on_due_date" || formScheduled.type === "on_file_available") && (
                     <span className="text-[10px] text-slate-400 mt-1 block">
-                      Variáveis aceitas: <code className="bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded text-indigo-500">[NOME_GUIA]</code> e <code className="bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded text-indigo-500">[VENCIMENTO]</code>
+                      Variáveis aceitas: <code className="bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded text-indigo-500">[NOME_GUIA]</code>, <code className="bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded text-indigo-500">[VENCIMENTO]</code> e <code className="bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded text-indigo-500">[CATEGORIA]</code>
                     </span>
                   )}
                 </div>
@@ -440,6 +508,63 @@ export function AccountantNotifications() {
 
           </div>
           
+        </div>
+      )}
+
+      {activeTab === 'solicitacoes' && (
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-xs min-h-[400px]">
+          <h2 className="text-sm font-bold text-slate-800 dark:text-white mb-4 flex items-center">
+             <AlertTriangle className="w-4 h-4 mr-2 text-indigo-500" /> Guias Aguardando Recálculo
+          </h2>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mb-6">
+            Documentos em que o cliente solicitou recálculo e não são suportados nativamente (FGTS, Honorários, etc). Você precisa gerar o novo arquivo, informar os valores e reenviar por aqui.
+          </p>
+
+          {solicitacoes.length === 0 ? (
+            <div className="text-center py-10">
+               <p className="text-slate-400 text-sm">Nenhuma solicitação de recálculo pendente.</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {solicitacoes.map(sol => (
+                <div key={sol.id} className="border border-slate-200 dark:border-slate-800 rounded-2xl p-4 bg-slate-50 dark:bg-slate-800/30 flex flex-col md:flex-row gap-4 justify-between items-start md:items-center">
+                  <div className="flex-1">
+                    <p className="text-xs text-indigo-500 font-bold mb-1">Cliente: {sol.clientName} ({sol.clientCnpj})</p>
+                    <h3 className="font-bold text-slate-800 dark:text-white">{sol.title}</h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">Categoria: {sol.category} • Vencimento original: {sol.dueDate}</p>
+                    <p className="text-[10px] text-slate-400 mt-2">Solicitado em: {new Date(sol.createdAt).toLocaleString('pt-BR')}</p>
+                  </div>
+                  
+                  {resolvingId === sol.id ? (
+                    <div className="w-full md:w-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 p-4 rounded-xl shadow-xs space-y-3">
+                       <div>
+                         <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Novo Arquivo (PDF)</label>
+                         <input type="file" accept=".pdf" onChange={e => setResolveForm({...resolveForm, file: e.target.files?.[0] || null})} className="text-xs w-full text-slate-700 dark:text-slate-300 file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-xs file:bg-indigo-50 dark:file:bg-indigo-900 file:text-indigo-700 dark:file:text-indigo-300" />
+                       </div>
+                       <div className="flex gap-2">
+                         <div className="flex-1">
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Novo Vencimento</label>
+                            <input type="text" placeholder="DD/MM/AAAA" value={resolveForm.dueDate} onChange={e => setResolveForm({...resolveForm, dueDate: e.target.value})} className="w-full px-2 py-1.5 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 rounded text-xs text-slate-900 dark:text-white" />
+                         </div>
+                         <div className="flex-1">
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Valor (Opcional)</label>
+                            <input type="number" step="0.01" placeholder="Ex: 150.00" value={resolveForm.valor} onChange={e => setResolveForm({...resolveForm, valor: e.target.value})} className="w-full px-2 py-1.5 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 rounded text-xs text-slate-900 dark:text-white" />
+                         </div>
+                       </div>
+                       <div className="flex gap-2 mt-2">
+                          <button onClick={() => setResolvingId(null)} className="flex-1 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-xs text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800">Cancelar</button>
+                          <button onClick={() => handleResolveSolicitacao(sol.id)} disabled={loading} className="flex-1 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition-colors">{loading ? 'Enviando...' : 'Enviar Guia'}</button>
+                       </div>
+                    </div>
+                  ) : (
+                    <button onClick={() => setResolvingId(sol.id)} className="px-4 py-2 rounded-xl bg-slate-900 dark:bg-indigo-600 text-white font-bold text-xs shrink-0 hover:bg-slate-800 dark:hover:bg-indigo-700">
+                      Responder / Enviar Nova Guia
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -20,7 +20,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Eye,
-  Send
+  Send,
+  DollarSign
 } from "lucide-react";
 import { useLocation } from "react-router-dom";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Legend } from "recharts";
@@ -572,6 +573,14 @@ export function ClientDashboard() {
                               <span className="flex items-center gap-1">
                                 <Calendar className="w-3 h-3 text-slate-400" /> Vencimento: <strong className="text-slate-700 dark:text-slate-300 font-extrabold">{doc.dueDate ? (doc.dueDate.includes("-") ? `${doc.dueDate.split("T")[0].split("-")[2]}/${doc.dueDate.split("T")[0].split("-")[1]}/${doc.dueDate.split("T")[0].split("-")[0]}` : doc.dueDate) : "N/D"}</strong>
                               </span>
+                              {doc.extractedData?.extractedValue && (
+                                <>
+                                  <span>•</span>
+                                  <span className="font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1">
+                                    <DollarSign className="w-3 h-3 text-slate-400" /> {doc.extractedData.extractedValue.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                                  </span>
+                                </>
+                              )}
                               <span>•</span>
                               <span className="font-medium">Arquivo: {doc.title || "Documento"}</span>
                             </div>

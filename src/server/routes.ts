@@ -321,16 +321,18 @@ export function setupRoutes(app: Express) {
       // Save file
       let safeFilename = "";
       let pixCode = null;
+      let extractedValue = null;
       if (arquivo_base64) {
         const buffer = Buffer.from(arquivo_base64, "base64");
         safeFilename = `${Date.now()}_${nome_arquivo || "documento"}`;
         const filePath = path.join(UPLOADS_DIR, safeFilename);
         fs.writeFileSync(filePath, buffer);
 
-        // Extract Pix Code if it's a PDF
+        // Extract Pix Code and Value if it's a PDF
         if (safeFilename.toLowerCase().endsWith(".pdf")) {
-          const { extractPixCodeFromPdf } = await import("./qrExtractor");
+          const { extractPixCodeFromPdf, extractValueFromPdfBuffer } = await import("./qrExtractor");
           pixCode = await extractPixCodeFromPdf(buffer);
+          extractedValue = await extractValueFromPdfBuffer(buffer, categoria || "");
         }
       }
 
@@ -354,7 +356,16 @@ export function setupRoutes(app: Express) {
         dados_extraidos.length > 0
       ) {
         titleStr += ` - ${dados_extraidos[0].orgao}: ${dados_extraidos[0].status}`;
+      }
 
+      let finalExtractedData: any = dados_extraidos || null;
+      if (extractedValue !== null) {
+         if (Array.isArray(finalExtractedData)) {
+             finalExtractedData = { array: finalExtractedData, extractedValue };
+         } else {
+             finalExtractedData = finalExtractedData || {};
+             finalExtractedData.extractedValue = extractedValue;
+         }
       }
 
       const newDoc = await db
@@ -367,11 +378,34 @@ export function setupRoutes(app: Express) {
           dueDate: vencimento || null,
           fileUrl: safeFilename ? `/uploads/${safeFilename}` : null,
           pixCode: pixCode,
-          extractedData: dados_extraidos || null,
+          extractedData: finalExtractedData,
+
           status: "new",
           uploadedBy: "accountant", // As it comes from integration system
         })
         .returning();
+
+      // Trigger on_file_available notification logic here for this document
+      const rules = await db.select().from(scheduledNotifications)
+        .where(eq(scheduledNotifications.type, 'on_file_available'));
+      
+      for (const rule of rules) {
+        if (!rule.clientId || rule.clientId === newDoc[0].clientId) {
+          let title = (rule.title || "Nova Guia Disponível").replace(/\[NOME_GUIA\]/g, newDoc[0].title).replace(/\[CATEGORIA\]/g, newDoc[0].category);
+          let body = (rule.body || "").replace(/\[NOME_GUIA\]/g, newDoc[0].title)
+                                       .replace(/\[CATEGORIA\]/g, newDoc[0].category)
+                                       .replace(/\[VENCIMENTO\]/g, newDoc[0].dueDate || "N/A");
+          
+          await db.insert(notifications).values({
+            userId: newDoc[0].clientId,
+            title,
+            body,
+            type: "novo_documento_disponivel",
+            status: "unread",
+            createdAt: new Date(),
+          });
+        }
+      }
 
       res.status(200).json({ success: true, documentId: newDoc[0].id });
     } catch (e: any) {
@@ -1223,6 +1257,100 @@ export function setupRoutes(app: Express) {
     const allClients = await db.select().from(clients);
     res.json({ clients: allClients });
   });
+
+  app.get("/api/accountant/solicitacoes", verifyAccountantAuth, async (req, res) => {
+    try {
+      const pendingDocs = await db.select({
+         id: documents.id,
+         title: documents.title,
+         category: documents.category,
+         competence: documents.competence,
+         dueDate: documents.dueDate,
+         status: documents.status,
+         createdAt: documents.createdAt,
+         clientName: clients.name,
+         clientCnpj: clients.cnpj
+      }).from(documents)
+      .leftJoin(clients, eq(documents.clientId, clients.id))
+      .where(eq(documents.status, 'waiting_accountant'));
+
+      res.json({ solicitacoes: pendingDocs });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post(
+    "/api/accountant/solicitacoes/:id",
+    verifyAccountantAuth,
+    upload.single("file"),
+    async (req, res) => {
+      try {
+        const { id } = req.params;
+        const { dueDate, valor } = req.body;
+
+        if (!req.file) {
+          return res.status(400).json({ error: "Arquivo é obrigatório" });
+        }
+
+        const filePath = `/uploads/${req.file.filename}`;
+
+        // Get document to find client id
+        const docs = await db.select().from(documents).where(eq(documents.id, id));
+        if (docs.length === 0) {
+          return res.status(404).json({ error: "Documento não encontrado" });
+        }
+        const doc = docs[0];
+
+        let extractedValue = parseFloat(valor);
+        let extractedData = doc.extractedData || {};
+        if (typeof extractedData !== 'object' || Array.isArray(extractedData)) {
+            extractedData = { original: extractedData };
+        }
+        if (!isNaN(extractedValue)) {
+            (extractedData as any).extractedValue = extractedValue;
+        }
+
+        const [updatedDoc] = await db
+          .update(documents)
+          .set({
+            fileUrl: filePath,
+            dueDate: dueDate || doc.dueDate,
+            status: "GUIA_ATUALIZADA",
+            extractedData,
+          })
+          .where(eq(documents.id, id))
+          .returning();
+
+        // Trigger on_file_available notification logic here for this document
+        const rules = await db.select().from(scheduledNotifications)
+          .where(eq(scheduledNotifications.type, 'on_file_available'));
+        
+        for (const rule of rules) {
+          if (!rule.clientId || rule.clientId === doc.clientId) {
+            let title = (rule.title || "Nova Guia Disponível").replace(/\[NOME_GUIA\]/g, doc.title).replace(/\[CATEGORIA\]/g, doc.category);
+            let body = (rule.body || "").replace(/\[NOME_GUIA\]/g, doc.title)
+                                         .replace(/\[CATEGORIA\]/g, doc.category)
+                                         .replace(/\[VENCIMENTO\]/g, updatedDoc.dueDate || "N/A");
+            
+            await db.insert(notifications).values({
+              userId: doc.clientId,
+              title,
+              body,
+              type: "recalculo_disponivel",
+              status: "unread",
+              createdAt: new Date(),
+            });
+          }
+        }
+
+        res.json({ success: true, document: updatedDoc });
+      } catch (e: any) {
+        console.error("Erro ao resolver solicitação:", e);
+        res.status(500).json({ error: e.message });
+      }
+    }
+  );
 
   app.post(
     "/api/accountant/clients",

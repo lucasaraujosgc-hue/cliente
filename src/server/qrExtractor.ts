@@ -453,3 +453,57 @@ export async function extractPixCodeFromPdf(buffer: Buffer): Promise<string | nu
     }
   }
 }
+
+// ==================== EXTRAÇÃO DE VALOR ====================
+
+export async function extractValueFromPdfBuffer(buffer: Buffer, category: string): Promise<number | null> {
+  let tempDir: string | null = null;
+  try {
+    const hasPoppler = await checkPopplerInstalled();
+    if (!hasPoppler) return null;
+
+    tempDir = await createTempDir();
+    const pdfPath = path.join(tempDir, 'input.pdf');
+    await fs.writeFile(pdfPath, buffer);
+
+    const fullText = await extractTextFromPdf(pdfPath);
+    if (!fullText) return null;
+
+    const catUpper = category.toUpperCase();
+    let regex = null;
+
+    if (catUpper.includes('SIMPLES') || catUpper.includes('INSS') || catUpper.includes('DCTFWEB')) {
+      // Valor Total do Documento
+      regex = /Valor Total do Documento[\s\S]*?(?:R\$)?\s*([\d\.,]+)/i;
+    } else if (catUpper.includes('FGTS')) {
+      // Valor a recolher
+      regex = /Valor a recolher[\s\S]*?(?:R\$)?\s*([\d\.,]+)/i;
+    } else if (catUpper.includes('HONOR')) {
+      // Valor do Documento
+      regex = /Valor do Documento[\s\S]*?(?:R\$)?\s*([\d\.,]+)/i;
+    }
+
+    if (regex) {
+      const match = fullText.match(regex);
+      if (match && match[1]) {
+        let valStr = match[1].trim();
+        if (valStr.includes(',') && valStr.includes('.')) {
+            valStr = valStr.replace(/\./g, '').replace(',', '.');
+        } else if (valStr.includes(',')) {
+            valStr = valStr.replace(',', '.');
+        }
+        const val = parseFloat(valStr);
+        if (!isNaN(val)) return val;
+      }
+    }
+
+    return null;
+  } catch (err) {
+    console.error('Erro ao extrair valor do PDF:', err);
+    return null;
+  } finally {
+    if (tempDir) {
+      await cleanupTempDir(tempDir);
+    }
+  }
+}
