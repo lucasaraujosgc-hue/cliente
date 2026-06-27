@@ -258,6 +258,8 @@ export async function extractPixCodeFromPdf(buffer: Buffer): Promise<string | nu
       disableFontFace: true,
       disableRange: true,
       standardFontDataUrl,
+
+      useWasm: false,
     });
 
     pdfDocument = await loadingTask.promise;
