@@ -1,9 +1,13 @@
 import React, { useState, useEffect } from "react";
 import { Copy, Check, QrCode } from "lucide-react";
 import * as pdfjsLib from "pdfjs-dist";
+import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import jsQR from "jsqr";
 
-pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
+const pdfLoadOptions = {
+  standardFontDataUrl: "/pdfjs/standard_fonts/",
+};
 
 interface PixScannerButtonProps {
   docId: number;
@@ -22,7 +26,7 @@ export function PixScannerButton({ docId, fileUrl }: PixScannerButtonProps) {
 
     const preScan = async () => {
       try {
-        const loadingTask = pdfjsLib.getDocument({ url: fileUrl });
+        const loadingTask = pdfjsLib.getDocument({ url: fileUrl, ...pdfLoadOptions });
         const pdf = await loadingTask.promise;
 
         let foundCode: string | null = null;
@@ -341,3 +345,4 @@ export function PixScannerButton({ docId, fileUrl }: PixScannerButtonProps) {
     </button>
   );
 }
+
