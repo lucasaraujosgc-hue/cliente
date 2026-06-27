@@ -15,6 +15,8 @@ export function Settings() {
     ambiente: "trial"
   });
   const [certFile, setCertFile] = useState<File | null>(null);
+  const [hasSavedCert, setHasSavedCert] = useState(false);
+  const [certMissing, setCertMissing] = useState(false);
 
   useEffect(() => {
     fetchConfig();
@@ -35,6 +37,11 @@ export function Settings() {
           cnpjContratante: data.config.cnpjContratante || "",
           ambiente: data.config.ambiente || "trial"
         });
+        setHasSavedCert(!!data.config.hasCert);
+        setCertMissing(!!data.config.certMissing);
+      } else {
+        setHasSavedCert(false);
+        setCertMissing(false);
       }
     } catch (e: any) {
       console.error(e);
@@ -76,6 +83,8 @@ export function Settings() {
         throw new Error(errStr);
       }
       setSuccess("Configurações salvas com sucesso!");
+      setCertFile(null);
+      await fetchConfig();
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -174,9 +183,14 @@ export function Settings() {
                       <Upload className="w-4 h-4" /> Selecionar Arquivo
                     </label>
                     <span className="text-sm text-slate-500 truncate">
-                      {certFile ? certFile.name : (formData.consumerKey ? "Certificado salvo" : "Nenhum selecionado")}
+                      {certFile ? certFile.name : (certMissing ? "Arquivo nao encontrado" : (hasSavedCert ? "Certificado salvo" : "Nenhum selecionado"))}
                     </span>
                   </div>
+                  {certMissing && !certFile && (
+                    <p className="text-xs font-semibold text-red-600 dark:text-red-400">
+                      O caminho do certificado esta salvo, mas o arquivo nao existe no servidor. Reenvie o .pfx/.p12.
+                    </p>
+                  )}
                 </div>
 
                 <div className="space-y-2">
@@ -219,3 +233,4 @@ export function Settings() {
     </div>
   );
 }
+
