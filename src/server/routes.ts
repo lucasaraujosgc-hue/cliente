@@ -42,7 +42,6 @@ import { eq, desc, asc, inArray } from "drizzle-orm";
 import fs from "fs";
 import https from "https";
 import path from "path";
-import fetchNode from "node-fetch";
 import { differenceInDays, parseISO, format } from "date-fns";
 
 const UPLOADS_DIR = path.join(process.cwd(), "uploads");
@@ -180,6 +179,44 @@ function isUuid(str: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
 }
 
+// ── Helper HTTP nativo (evita problemas com node-fetch ESM) ──────────────────
+function httpsPost(
+  urlStr: string,
+  headers: Record<string, string>,
+  body: string,
+  agent?: any,
+): Promise<{ ok: boolean; status: number; text: () => Promise<string>; json: () => Promise<any> }> {
+  return new Promise((resolve, reject) => {
+    const url = new URL(urlStr);
+    const bodyBuf = Buffer.from(body, "utf8");
+    const opts: any = {
+      hostname: url.hostname,
+      port: url.port || 443,
+      path: url.pathname + url.search,
+      method: "POST",
+      headers: { ...headers, "Content-Length": bodyBuf.byteLength },
+    };
+    if (agent) opts.agent = agent;
+
+    const req = https.request(opts, (res) => {
+      const chunks: Buffer[] = [];
+      res.on("data", (c: Buffer) => chunks.push(c));
+      res.on("end", () => {
+        const text = Buffer.concat(chunks).toString("utf8");
+        resolve({
+          ok: res.statusCode! >= 200 && res.statusCode! < 300,
+          status: res.statusCode!,
+          text: async () => text,
+          json: async () => JSON.parse(text),
+        });
+      });
+    });
+    req.on("error", reject);
+    req.write(bodyBuf);
+    req.end();
+  });
+}
+
 async function getSerproToken(config: any, agent?: any): Promise<{ access_token: string; jwt_token: string }> {
   const cacheKey = `${config.consumerKey}:${config.ambiente}`;
   const cached = serproTokenCache[cacheKey];
@@ -193,18 +230,16 @@ async function getSerproToken(config: any, agent?: any): Promise<{ access_token:
     `${config.consumerKey}:${config.consumerSecret}`
   ).toString("base64");
 
-  const url = "https://autenticacao.sapi.serpro.gov.br/authenticate";
-
-  const resp = await fetchNode(url, {
-    method: "POST",
-    headers: {
+  const resp = await httpsPost(
+    "https://autenticacao.sapi.serpro.gov.br/authenticate",
+    {
       Authorization: `Basic ${credentials}`,
       "role-type": "TERCEIROS",
       "Content-Type": "application/x-www-form-urlencoded",
     },
-    body: "grant_type=client_credentials",
+    "grant_type=client_credentials",
     agent,
-  });
+  );
 
   if (!resp.ok) {
     const errText = await resp.text();
@@ -237,12 +272,7 @@ async function serproPost(
   };
   if (tokens.jwt_token) headers["jwt_token"] = tokens.jwt_token;
 
-  return fetchNode(url, {
-    method: "POST",
-    headers,
-    body: JSON.stringify(payload),
-    agent,
-  });
+  return httpsPost(url, headers, JSON.stringify(payload), agent);
 }
 
 export function setupRoutes(app: Express) {
@@ -883,7 +913,11 @@ export function setupRoutes(app: Express) {
         let pdfBase64;
         let vencFormatado;
         let valorTotal;
-        let isMock = false;
+        // ── Converte dataVencimento AAAAMMDD → YYYY-MM-DD ────────────────────
+        function parseVencimento(raw: string | undefined): string | null {
+          if (!raw || raw.length !== 8) return null;
+          return `${raw.substring(0, 4)}-${raw.substring(4, 6)}-${raw.substring(6, 8)}`;
+        }
 
         try {
           const tokens = await getSerproToken(config, certAgent);
@@ -896,26 +930,43 @@ export function setupRoutes(app: Express) {
             const errBody = await apiResp.text();
             throw new Error(`SERPRO retornou ${apiResp.status}: ${errBody}`);
           }
-          
+
           const text = await apiResp.text();
           const root = JSON.parse(text);
+
+          // "dados" vem como string JSON escapada — faz parse duplo se necessário
           let dados = root.dados;
-          if (typeof dados === "string") dados = JSON.parse(dados);
+          if (typeof dados === "string") {
+            try { dados = JSON.parse(dados); } catch (_) {}
+          }
 
           if (tipoGuia === "DAS_SIMPLES") {
+            // Resposta: array de objetos Das
+            // { pdf, cnpjCompleto, detalhamentoDas: { dataVencimento, valores: { total } } }
             const das = Array.isArray(dados) ? dados[0] : dados;
+            if (!das) throw new Error("SERPRO DAS: resposta sem dados.");
             pdfBase64 = das.pdf;
+            const det = das.detalhamentoDas ?? das.detalhamento ?? {};
+            vencFormatado = parseVencimento(det.dataVencimento) ?? null;
+            valorTotal    = det.valores?.total ?? null;
           } else {
-            pdfBase64 = dados?.PDFByteArrayBase64 ?? dados;
+            // Resposta: { PDFByteArrayBase64: "..." }
+            const dctf = typeof dados === "object" && dados !== null ? dados : {};
+            pdfBase64  = dctf.PDFByteArrayBase64;
+            if (!pdfBase64) throw new Error("SERPRO DCTFWEB: PDFByteArrayBase64 ausente na resposta.");
+            // DCTFWEB não retorna vencimento/valor na resposta — mantém null para extrair do PDF
+            vencFormatado = null;
+            valorTotal    = null;
           }
+
+          console.log(`[SERPRO API] Dados recebidos — vencimento: ${vencFormatado}, valor: ${valorTotal}`);
         } catch (e: any) {
-          console.warn("Erro ao comunicar com Integra Contador SERPRO, utilizando fallback mock resiliente:", e.message);
-          isMock = true;
+          console.error("Erro ao comunicar com Integra Contador SERPRO:", e.message);
+          throw e; // propaga — sem fallback mock para não enganar o usuário com dados falsos
         }
 
-        // Se falhou ou se não retornou o PDF, geramos dados simulados de alta qualidade para testes
         if (!pdfBase64) {
-          pdfBase64 = "JVBERi0xLjQKJebgp4K3CjEgMCBvYmoKPDwKL1R5cGUgL0NhdGFsb2cKL1BhZ2VzIDIgMCBSCj4+CmVuZG9iagoyIDAgb2JqCjw8Ci9UeXBlIC9QYWdlcwovS2lkcyBbMyAwIFJdCi9Db3VudCAxCj4+CmVuZG9iajozIDAgb2JqCjw8Ci9UeXBlIC9QYWdlCi9QYXJlbnQgMiAwIFIKL01lZGlhQm94IFswIDAgNTk1IDg0Ml0KL1Jlc291cmNlcyA8PAovRm9udCA8PAovRjEgNCAwIFIKPj4KPj4KL0NvbnRlbnRzIDUgMCBSCj4+CmVuZG9iago0IDAgb2JqCjw8Ci9UeXBlIC9Gb250Ci9TdWJ0eXBlIC9UeXBlMQovQmFzZUZvbnQgL0hlbHZldGljYQo+PgplbmRvYmoKNSAwIG9iago8PAovTGVuZ3RoIDYyCj4+CnN0cmVhbQpCVAovRjEgMTIgVGYKMTAwIDcwMCBUZAooR3VpYSByZWNhbGN1bGFkYSB2aWEgSW50ZWdyYSBDb250YWRvciAoU2ltdWxhZG8pLikgVGoKRVQKZW5kc3RyZWFtCmVuZG9iagp4cmVmCjAgNgowMDAwMDAwMDAwIDY1NTM1IGYgCjAwMDAwMDAwMTUgMDAwMDAgbiAKMDAwMDAwMDA2MCAwMDAwMCBuIAowMDAwMDAwMTExIDAwMDAwIG4gCjAwMDAwMDAyNDQgMDAwMDAgbiAKMDAwMDAwMDMwNSAwMDAwMCBuIAp0cmFpbGVyCjw8Ci9Sb290IDEgMCBSCi9TaXplIDYKPj4Kc3RhcnR4cmVmCjQzNAolJUVPRgo=";
+          throw new Error("SERPRO não retornou PDF na resposta.");
         }
 
         const pdfBuffer = Buffer.from(pdfBase64, "base64");
@@ -927,38 +978,6 @@ export function setupRoutes(app: Express) {
           console.warn("Nao foi possivel extrair o PIX do PDF da guia:", err);
         }
 
-        // Cálculo de nova data de vencimento (2 dias no futuro, pulando finais de semana)
-        const calcDate = new Date();
-        calcDate.setDate(calcDate.getDate() + 2);
-        if (calcDate.getDay() === 6) { // Sábado
-          calcDate.setDate(calcDate.getDate() + 2);
-        } else if (calcDate.getDay() === 0) { // Domingo
-          calcDate.setDate(calcDate.getDate() + 1);
-        }
-        const vy = calcDate.getFullYear();
-        const vm = String(calcDate.getMonth() + 1).padStart(2, "0");
-        const vd = String(calcDate.getDate()).padStart(2, "0");
-        vencFormatado = `${vy}-${vm}-${vd}`;
-
-        // Cálculo de valor com acréscimo de +5% de multa/juros fictícios para evidenciar o recálculo
-        let valorOriginal = tipoGuia === "DCTFWEB_INSS" ? 450.0 : 120.5;
-        if (documentId && isUuid(documentId)) {
-          const docList = await db.select().from(documents).where(eq(documents.id, documentId));
-          if (docList.length > 0) {
-            const ext = docList[0].extractedData as any;
-            if (ext && ext.valorTotal) {
-              valorOriginal = Number(ext.valorTotal);
-            }
-          }
-        }
-        valorTotal = Math.round(valorOriginal * 1.05 * 100) / 100; // +5% de multa/juros
-
-        const fakePixCode =
-          "00020126580014br.gov.bcb.pix0136a3bvv27flnh5204000053039865802BR5913Receita Federal6008Brasilia62070503***6304" +
-          Math.floor(1000 + Math.random() * 9000);
-        if (!pixCode && isMock) {
-          pixCode = fakePixCode;
-        }
         if (!pixCode) {
           console.warn("[SERPRO API] Guia gerada sem PIX copia e cola extraido do PDF.");
         }
@@ -1017,7 +1036,7 @@ export function setupRoutes(app: Express) {
         });
 
         console.log(
-          `[SERPRO API] Resposta processada com sucesso (Mock: ${isMock}). Retornando guia.`
+          `[SERPRO API] Resposta processada com sucesso. Retornando guia.`
         );
 
         res.json({
@@ -1027,7 +1046,6 @@ export function setupRoutes(app: Express) {
           valorTotal: valorTotal,
           pdfPath: realFileUrl!,
           pixCode,
-          isMock,
         });
       } catch (e: any) {
         console.error("Erro no Integra Contador:", e);
