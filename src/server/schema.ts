@@ -133,4 +133,3 @@ export const scheduledNotificationsRelations = relations(scheduledNotifications,
 		references: [clients.id],
 	}),
 }));
-

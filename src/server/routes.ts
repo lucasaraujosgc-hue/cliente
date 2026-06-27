@@ -913,12 +913,6 @@ export function setupRoutes(app: Express) {
         let pdfBase64;
         let vencFormatado;
         let valorTotal;
-        // ── Converte dataVencimento AAAAMMDD → YYYY-MM-DD ────────────────────
-        function parseVencimento(raw: string | undefined): string | null {
-          if (!raw || raw.length !== 8) return null;
-          return `${raw.substring(0, 4)}-${raw.substring(4, 6)}-${raw.substring(6, 8)}`;
-        }
-
         try {
           const tokens = await getSerproToken(config, certAgent);
           const baseUrl = config.ambiente === "producao"
@@ -947,7 +941,8 @@ export function setupRoutes(app: Express) {
             if (!das) throw new Error("SERPRO DAS: resposta sem dados.");
             pdfBase64 = das.pdf;
             const det = das.detalhamentoDas ?? das.detalhamento ?? {};
-            vencFormatado = parseVencimento(det.dataVencimento) ?? null;
+            // Data de vencimento da API é da guia original — ignora e usa data de emissão
+            vencFormatado = null;
             valorTotal    = det.valores?.total ?? null;
           } else {
             // Resposta: { PDFByteArrayBase64: "..." }
@@ -959,6 +954,18 @@ export function setupRoutes(app: Express) {
             valorTotal    = null;
           }
 
+          // Vencimento: usa a data de emissão (hoje), avança para próximo dia útil se cair em fds
+          if (!vencFormatado) {
+            const hoje = new Date();
+            const dia = hoje.getDay(); // 0=dom, 6=sab
+            const offset = dia === 6 ? 2 : dia === 0 ? 1 : 0;
+            if (offset > 0) hoje.setDate(hoje.getDate() + offset);
+            const yy = hoje.getFullYear();
+            const mm = String(hoje.getMonth() + 1).padStart(2, "0");
+            const dd = String(hoje.getDate()).padStart(2, "0");
+            vencFormatado = `${yy}-${mm}-${dd}`;
+            console.log(`[SERPRO API] Vencimento não retornado pela API, usando data de emissão: ${vencFormatado}`);
+          }
           console.log(`[SERPRO API] Dados recebidos — vencimento: ${vencFormatado}, valor: ${valorTotal}`);
         } catch (e: any) {
           console.error("Erro ao comunicar com Integra Contador SERPRO:", e.message);
@@ -1083,7 +1090,7 @@ export function setupRoutes(app: Express) {
         res.setHeader("Content-Type", "application/pdf");
         res.setHeader(
           "Content-Disposition",
-          `attachment; filename=guia_${guiaId}.pdf`,
+          `inline; filename=guia_${guiaId}.pdf`,
         );
         return res.send(buffer);
       }
@@ -1094,7 +1101,7 @@ export function setupRoutes(app: Express) {
         res.setHeader("Content-Type", "application/pdf");
         res.setHeader(
           "Content-Disposition",
-          `attachment; filename=${path.basename(pdfData)}`,
+          `inline; filename=${path.basename(pdfData)}`,
         );
         const stream = fs.createReadStream(pdfData);
         stream.pipe(res);

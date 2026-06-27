@@ -345,4 +345,3 @@ export function PixScannerButton({ docId, fileUrl }: PixScannerButtonProps) {
     </button>
   );
 }
-

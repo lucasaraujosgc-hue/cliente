@@ -246,4 +246,3 @@ export function GuiaAtualizarButton({ clienteId, guia, onAtualizado, isOverdue }
     </>
   );
 }
-
