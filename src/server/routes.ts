@@ -1551,6 +1551,9 @@ export function setupRoutes(app: Express) {
       try {
         const clientId = req.params.id;
         // Delete dependencies
+        await db.delete(guiasGeradas).where(eq(guiasGeradas.clientId, clientId));
+        await db.delete(scheduledNotifications).where(eq(scheduledNotifications.clientId, clientId));
+        await db.delete(subscriptions).where(eq(subscriptions.clientId, clientId));
         await db.delete(documents).where(eq(documents.clientId, clientId));
         await db.delete(billingData).where(eq(billingData.clientId, clientId));
         await db.delete(messages).where(eq(messages.clientId, clientId));

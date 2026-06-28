@@ -358,6 +358,9 @@ export function ClientDashboard() {
     if (doc.status === "paid") {
       return { label: "Pago", colorClass: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300", badgeColor: "bg-emerald-500", priority: 3 };
     }
+    if (doc.status === "late") {
+      return { label: "Atrasado 🔴", colorClass: "bg-rose-100 text-rose-800 border-rose-300 dark:bg-rose-950/30 dark:text-rose-400 dark:border-rose-800/50 shadow-sm", badgeColor: "bg-rose-500", priority: 0, isOverdue: true };
+    }
     
     if (!doc.dueDate) {
       return { label: "Sem Vencimento", colorClass: "bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-350", badgeColor: "bg-slate-400", priority: 4 };
@@ -410,7 +413,7 @@ export function ClientDashboard() {
   }, 0);
 
   // Filter pending ones explicitly
-  const pendingDocs = allCurrentDocs.filter((d: any) => d.status !== "paid");
+  const pendingDocs = allCurrentDocs.filter((d: any) => d.status !== "paid" && d.dueDate);
 
   // Sort documents: Overdue first, followed by soon-to-expire, standard pending, and paid
   const sortedExpirations = [...allCurrentDocs].sort((a: any, b: any) => {
@@ -687,7 +690,7 @@ export function ClientDashboard() {
                           )}
 
 
-                          {doc.status !== "paid" && (
+                          {doc.status !== "paid" && doc.dueDate && (
                             <button 
                               onClick={() => handleMarkAsPaid(doc.id)}
                               className="flex-1 sm:flex-none h-10 px-3 bg-slate-900 border border-slate-900 hover:bg-slate-800 dark:bg-emerald-500 dark:border-emerald-500 dark:text-white dark:hover:bg-emerald-600 text-white text-xs font-bold rounded-xl shadow-xs transition-transform active:scale-95"

@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef, FormEvent } from "react";
 import { useParams, Link } from "react-router-dom";
-import { ArrowLeft, Send, UploadCloud, MessageSquare, FileSpreadsheet, Edit3, DollarSign, Calendar, PlusCircle, Check, Trash2, Download, AlertCircle } from "lucide-react";
+import { ArrowLeft, Send, UploadCloud, MessageSquare, FileSpreadsheet, Edit3, DollarSign, Calendar, PlusCircle, Check, Trash2, Download, AlertCircle, X, CheckCircle } from "lucide-react";
 import { format, parseISO, isBefore } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import * as XLSX from "xlsx";
@@ -196,6 +196,18 @@ export function ClientDetail() {
         "Content-Type": "application/json"
       },
       body: JSON.stringify({ status: "ok" })
+    });
+    loadData();
+  };
+
+  const markDocStatus = async (docId: string, status: string) => {
+    await fetch(`/api/accountant/document/${docId}/status`, {
+      method: "POST",
+      headers: { 
+        Authorization: `Bearer ${localStorage.getItem("accountantToken")}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ status })
     });
     loadData();
   };
@@ -633,7 +645,13 @@ export function ClientDetail() {
                            <Download className="w-4 h-4" />
                         </a>
                      )}
-                     {doc.uploadedBy === 'client' && doc.status !== 'ok' && doc.status !== 'viewed' && (
+                     <button onClick={() => markDocStatus(doc.id, "late")} title="Marcar como Atrasado" className="p-2 bg-rose-50 text-rose-600 rounded-lg hover:bg-rose-100">
+                        <X className="w-4 h-4" />
+                     </button>
+                     <button onClick={() => markDocStatus(doc.id, "paid")} title="Marcar como Em Dia / Pago" className="p-2 bg-emerald-50 text-emerald-600 rounded-lg hover:bg-emerald-100">
+                        <CheckCircle className="w-4 h-4" />
+                     </button>
+                     {doc.uploadedBy === 'client' && doc.status !== 'ok' && doc.status !== 'viewed' && doc.status !== 'paid' && doc.status !== 'late' && (
                         <button onClick={() => markDocOk(doc.id)} title="Marcar como Recebido/OK" className="p-2 bg-emerald-50 text-emerald-600 rounded-lg hover:bg-emerald-100">
                            <Check className="w-4 h-4" />
                         </button>
