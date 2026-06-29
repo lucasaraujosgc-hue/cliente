@@ -1,3 +1,4 @@
+import { apiFetch } from "../../lib/apiClient";
 import React, { useState, useEffect } from "react";
 import { Settings as SettingsIcon, Save, Key, FileText, Globe, CheckCircle, AlertCircle, Upload } from "lucide-react";
 
@@ -12,7 +13,8 @@ export function Settings() {
     consumerSecret: "",
     certSenha: "",
     cnpjContratante: "",
-    ambiente: "trial"
+    ambiente: "trial",
+    whatsappSupport: ""
   });
   const [certFile, setCertFile] = useState<File | null>(null);
   const [hasSavedCert, setHasSavedCert] = useState(false);
@@ -25,8 +27,8 @@ export function Settings() {
   const fetchConfig = async () => {
     try {
       const token = localStorage.getItem("accountantToken");
-      const res = await fetch("/api/pendencies/sitfis/config", {
-        headers: { Authorization: `Bearer ${token}` }
+      const res = await apiFetch("/api/pendencies/sitfis/config", {
+        
       });
       const data = await res.json();
       if (data.config) {
@@ -35,7 +37,8 @@ export function Settings() {
           consumerSecret: data.config.consumerSecret || "",
           certSenha: data.config.certSenha || "",
           cnpjContratante: data.config.cnpjContratante || "",
-          ambiente: data.config.ambiente || "trial"
+          ambiente: data.config.ambiente || "trial",
+          whatsappSupport: data.config.whatsappSupport || ""
         });
         setHasSavedCert(!!data.config.hasCert);
         setCertMissing(!!data.config.certMissing);
@@ -64,13 +67,13 @@ export function Settings() {
       payload.append("certSenha", formData.certSenha);
       payload.append("cnpjContratante", formData.cnpjContratante);
       payload.append("ambiente", formData.ambiente);
+      payload.append("whatsappSupport", formData.whatsappSupport);
       if (certFile) {
         payload.append("cert", certFile);
       }
 
-      const res = await fetch("/api/pendencies/sitfis/config", {
+      const res = await apiFetch("/api/pendencies/sitfis/config", {
         method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
         body: payload
       });
 
@@ -113,6 +116,19 @@ export function Settings() {
           <div className="text-center py-10 text-slate-500">Carregando...</div>
         ) : (
           <form onSubmit={handleSave} className="space-y-5">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-8">
+              <div className="space-y-2">
+                <label className="text-sm font-bold text-slate-700 dark:text-slate-300">Número WhatsApp (Suporte Cliente)</label>
+                <input
+                  type="text"
+                  value={formData.whatsappSupport}
+                  onChange={e => setFormData({ ...formData, whatsappSupport: e.target.value })}
+                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 dark:text-white"
+                  placeholder="Ex: 5511999999999"
+                />
+              </div>
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
               <div className="space-y-2">
                 <label className="text-sm font-bold text-slate-700 dark:text-slate-300">Consumer Key (OAuth2)</label>

@@ -1,3 +1,4 @@
+import { apiFetch } from "../../lib/apiClient";
 import React, { useState, useEffect } from "react";
 import { Send, Bell, CheckSquare, Square, Clock, Trash2, Calendar, AlertTriangle } from "lucide-react";
 
@@ -31,16 +32,16 @@ export function AccountantNotifications() {
   const [resolveForm, setResolveForm] = useState({ valor: "", dueDate: "", file: null as File | null });
 
   const loadClients = () => {
-    fetch("/api/accountant/clients", {
-      headers: { Authorization: `Bearer ${localStorage.getItem("accountantToken")}` }
+    apiFetch("/api/accountant/clients", {
+      
     })
       .then(res => res.json())
       .then(data => setClients(data.clients || []));
   };
 
   const loadScheduledRules = () => {
-    fetch("/api/admin/notifications/scheduled", {
-      headers: { Authorization: `Bearer ${localStorage.getItem("accountantToken")}` }
+    apiFetch("/api/admin/notifications/scheduled", {
+      
     })
       .then(res => res.json())
       .then(data => setScheduledRules(data.list || []))
@@ -48,8 +49,8 @@ export function AccountantNotifications() {
   };
 
   const loadSolicitacoes = () => {
-    fetch("/api/accountant/solicitacoes", {
-      headers: { Authorization: `Bearer ${localStorage.getItem("accountantToken")}` }
+    apiFetch("/api/accountant/solicitacoes", {
+      
     })
       .then(res => res.json())
       .then(data => setSolicitacoes(data.solicitacoes || []))
@@ -71,11 +72,11 @@ export function AccountantNotifications() {
     
     setLoading(true);
     try {
-      const res = await fetch("/api/admin/notifications/send", {
+      const res = await apiFetch("/api/admin/notifications/send", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("accountantToken")}`
+          
         },
         body: JSON.stringify({
           userIds: selectedClientIds,
@@ -100,11 +101,11 @@ export function AccountantNotifications() {
     e.preventDefault();
     setLoading(true);
     try {
-      const res = await fetch("/api/admin/notifications/schedule", {
+      const res = await apiFetch("/api/admin/notifications/schedule", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("accountantToken")}`
+          
         },
         body: JSON.stringify({
           clientId: formScheduled.clientId || null,
@@ -140,11 +141,9 @@ export function AccountantNotifications() {
   const handleDeleteRule = async (id: number) => {
     if (!confirm("Tem certeza que deseja excluir esta regra de alerta?")) return;
     try {
-      const res = await fetch(`/api/admin/notifications/scheduled/${id}`, {
+      const res = await apiFetch(`/api/admin/notifications/scheduled/${id}`, {
         method: "DELETE",
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem("accountantToken")}`
-        }
+        
       });
       if (res.ok) {
         loadScheduledRules();
@@ -191,11 +190,8 @@ export function AccountantNotifications() {
     if (resolveForm.dueDate) formData.append("dueDate", resolveForm.dueDate);
 
     try {
-        const res = await fetch(`/api/accountant/solicitacoes/${id}`, {
+        const res = await apiFetch(`/api/accountant/solicitacoes/${id}`, {
             method: "POST",
-            headers: {
-                Authorization: `Bearer ${localStorage.getItem("accountantToken")}`
-            },
             body: formData
         });
 

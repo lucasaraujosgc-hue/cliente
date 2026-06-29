@@ -1,3 +1,4 @@
+import { apiFetch } from "../../lib/apiClient";
 import React, { useState, useEffect } from "react";
 import { format, isBefore, parseISO, startOfDay, differenceInDays } from "date-fns";
 import { AlertCircle, FileText, Download, CheckCircle, Clock, RotateCw, Calendar, DollarSign, Send } from "lucide-react";
@@ -13,8 +14,8 @@ export function ClientOverdue() {
     setIsRefreshing(true);
     const token = localStorage.getItem("clientToken") || sessionStorage.getItem("clientToken");
     try {
-      const response = await fetch("/api/client/dashboard", {
-        headers: { Authorization: `Bearer ${token}` }
+      const response = await apiFetch("/api/client/dashboard", {
+        
       });
       const data = await response.json();
       
@@ -73,11 +74,11 @@ export function ClientOverdue() {
   const handleMarkAsPaid = async (docId: string) => {
     const token = localStorage.getItem("clientToken") || sessionStorage.getItem("clientToken");
     try {
-      const res = await fetch(`/api/client/mark-doc/${docId}`, {
+      const res = await apiFetch(`/api/client/mark-doc/${docId}`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`
+          
         },
         body: JSON.stringify({ status: "paid" })
       });

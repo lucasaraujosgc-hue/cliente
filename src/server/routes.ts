@@ -16,6 +16,26 @@ import {
   scheduledNotifications,
 } from "./schema";
 import webpush from "web-push";
+import admin from "firebase-admin";
+
+// Initialize Firebase Admin if credentials are provided
+if (process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_CLIENT_EMAIL && process.env.FIREBASE_PRIVATE_KEY) {
+  try {
+    admin.initializeApp({
+      credential: admin.credential.cert({
+        projectId: process.env.FIREBASE_PROJECT_ID,
+        clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+        // Handle escaped newlines in the private key
+        privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+      }),
+    });
+    console.log("Firebase Admin initialized successfully.");
+  } catch (error) {
+    console.error("Firebase Admin initialization error", error);
+  }
+}
+
+
 
 // Generate VAPID keys if they don't exist in env. For development, we can generate them on the fly if needed.
 // Usually you'd store these in .env
@@ -188,11 +208,24 @@ async function sendClientNotification(clientId: string, title: string, body: str
   const payload = JSON.stringify({ title, body });
   
   for (const sub of subs) {
-    try {
-      await webpush.sendNotification(sub.subscriptionObject as any, payload);
-    } catch (err: any) {
-      if (err.statusCode === 410 || err.statusCode === 404) {
-        await db.delete(subscriptions).where(eq(subscriptions.id, sub.id));
+    if (sub.subscriptionObject) {
+      try {
+        await webpush.sendNotification(sub.subscriptionObject as any, payload);
+      } catch (err: any) {
+        if (err.statusCode === 410 || err.statusCode === 404) {
+          await db.delete(subscriptions).where(eq(subscriptions.id, sub.id));
+        }
+      }
+    }
+    
+    if (sub.fcmToken && admin.apps.length > 0) {
+      try {
+        await admin.messaging().send({
+          token: sub.fcmToken,
+          notification: { title, body }
+        });
+      } catch (err) {
+        console.error("Error sending FCM in sendClientNotification", err);
       }
     }
   }
@@ -777,8 +810,12 @@ export function setupRoutes(app: Express) {
       .where(eq(messages.clientId, clientId))
       .orderBy(desc(messages.createdAt));
 
+    const serproConf = await db.select().from(serproConfig).limit(1);
+    const whatsappSupport = serproConf[0]?.whatsappSupport || "";
+
     res.json({
       client,
+      whatsappSupport,
       documents: docs.map((d) => ({
         ...d,
         createdAt: d.createdAt.toISOString(),
@@ -2184,6 +2221,7 @@ export function setupRoutes(app: Express) {
           consumerKey: config[0].consumerKey,
           cnpjContratante: config[0].cnpjContratante,
           ambiente: config[0].ambiente,
+          whatsappSupport: config[0].whatsappSupport,
           updatedAt: config[0].updatedAt,
           hasSecret: !!config[0].consumerSecret,
           hasCert: certExists,
@@ -2210,6 +2248,7 @@ export function setupRoutes(app: Express) {
           certSenha,
           cnpjContratante,
           ambiente,
+          whatsappSupport,
         } = req.body;
 
         const updateData: any = {
@@ -2217,6 +2256,7 @@ export function setupRoutes(app: Express) {
           consumerSecret,
           cnpjContratante,
           ambiente,
+          whatsappSupport,
         };
 
         if (certSenha) updateData.certSenha = certSenha;
@@ -2266,11 +2306,12 @@ export function setupRoutes(app: Express) {
     async (req, res) => {
       try {
         const clientId = (req as any).user.clientId;
-        const { subscriptionObject, deviceName } = req.body;
+        const { subscriptionObject, fcmToken, deviceName } = req.body;
 
         await db.insert(subscriptions).values({
           clientId,
           subscriptionObject,
+          fcmToken,
           deviceName: deviceName || "Dispositivo",
         });
         res.status(201).json({ success: true });
@@ -2299,20 +2340,50 @@ export function setupRoutes(app: Express) {
 
         const payload = JSON.stringify({ title, body });
 
-        const promises = subs.map((sub) => {
-          return webpush
-            .sendNotification(
-              sub.subscriptionObject as webpush.PushSubscription,
-              payload,
-            )
-            .catch((err) => {
-              console.error("Error sending push to sub:", sub.id, err);
-              if (err.statusCode === 410 || err.statusCode === 404) {
-                return db
-                  .delete(subscriptions)
-                  .where(eq(subscriptions.id, sub.id));
-              }
-            });
+        const promises = subs.map(async (sub) => {
+          const pushes = [];
+
+          // 1. Web Push (PWA/Browser)
+          if (sub.subscriptionObject) {
+            pushes.push(
+              webpush
+                .sendNotification(
+                  sub.subscriptionObject as webpush.PushSubscription,
+                  payload,
+                )
+                .catch((err) => {
+                  console.error("Error sending Web Push to sub:", sub.id, err);
+                  // Remove invalid subscriptions
+                  if (err.statusCode === 410 || err.statusCode === 404) {
+                    return db
+                      .delete(subscriptions)
+                      .where(eq(subscriptions.id, sub.id));
+                  }
+                })
+            );
+          }
+
+          // 2. Firebase Cloud Messaging (Capacitor Android/iOS app)
+          if (sub.fcmToken && admin.apps.length > 0) {
+            pushes.push(
+              admin.messaging().send({
+                token: sub.fcmToken,
+                notification: {
+                  title,
+                  body,
+                },
+                data: {
+                  // Can add extra payload data here if needed
+                  click_action: "FLUTTER_NOTIFICATION_CLICK"
+                }
+              }).catch(err => {
+                console.error("Error sending FCM to sub:", sub.id, err);
+                // Handle invalid tokens if needed (err.code === 'messaging/invalid-registration-token')
+              })
+            );
+          }
+
+          return Promise.all(pushes);
         });
 
         await Promise.all(promises);
@@ -2430,20 +2501,37 @@ async function sendPushToClients(clientId: string | null, title: string, body: s
     }
 
     const payload = JSON.stringify({ title, body });
-    const promises = subs.map((sub) => {
-      return webpush
-        .sendNotification(
-          sub.subscriptionObject as webpush.PushSubscription,
-          payload,
-        )
-        .catch((err) => {
-          console.error("Error sending push in sweep to sub:", sub.id, err);
-          if (err.statusCode === 410 || err.statusCode === 404) {
-            return db
-              .delete(subscriptions)
-              .where(eq(subscriptions.id, sub.id));
-          }
-        });
+    const promises = subs.map(async (sub) => {
+      const pushes = [];
+      
+      if (sub.subscriptionObject) {
+        pushes.push(
+          webpush
+            .sendNotification(
+              sub.subscriptionObject as webpush.PushSubscription,
+              payload,
+            )
+            .catch((err) => {
+              console.error("Error sending push in sweep to sub:", sub.id, err);
+              if (err.statusCode === 410 || err.statusCode === 404) {
+                return db
+                  .delete(subscriptions)
+                  .where(eq(subscriptions.id, sub.id));
+              }
+            })
+        );
+      }
+      
+      if (sub.fcmToken && admin.apps.length > 0) {
+        pushes.push(
+          admin.messaging().send({
+            token: sub.fcmToken,
+            notification: { title, body }
+          }).catch(err => console.error("Error sending FCM sweep", err))
+        );
+      }
+      
+      return Promise.all(pushes);
     });
     await Promise.all(promises);
   } catch (err) {

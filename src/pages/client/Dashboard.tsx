@@ -1,3 +1,4 @@
+import { apiFetch } from "../../lib/apiClient";
 import React, { useEffect, useState, useRef } from "react";
 import { 
   AlertCircle, 
@@ -37,6 +38,7 @@ export function ClientDashboard() {
   const navigate = useNavigate();
   
   const [data, setData] = useState<any>(null);
+  const [whatsappSupport, setWhatsappSupport] = useState("");
   const [selectedCompetence, setSelectedCompetence] = useState(format(subMonths(new Date(), 1), "MM/yyyy"));
   const [isUploading, setIsUploading] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -67,11 +69,14 @@ export function ClientDashboard() {
     setIsRefreshing(true);
     const token = localStorage.getItem("clientToken") || sessionStorage.getItem("clientToken");
     try {
-      const response = await fetch("/api/client/dashboard", {
-        headers: { Authorization: `Bearer ${token}` }
+      const response = await apiFetch("/api/client/dashboard", {
+        
       });
       const d = await response.json();
       setData(d);
+      if (d.whatsappSupport) {
+        setWhatsappSupport(d.whatsappSupport);
+      }
       if (d.client?.notificationPreferences) {
         setPrefsForm(d.client.notificationPreferences);
       }
@@ -96,11 +101,11 @@ export function ClientDashboard() {
   const handleSavePrefs = async () => {
     try {
       const token = localStorage.getItem("clientToken") || sessionStorage.getItem("clientToken");
-      const res = await fetch("/api/client/preferences", {
+      const res = await apiFetch("/api/client/preferences", {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`
+          
         },
         body: JSON.stringify({ notificationPreferences: prefsForm })
       });
@@ -146,33 +151,66 @@ export function ClientDashboard() {
 
   const subscribeToPush = async () => {
     try {
-      const token = localStorage.getItem("clientToken") || sessionStorage.getItem("clientToken");
-      if (!("serviceWorker" in navigator) || !("PushManager" in window)) return;
+      const isCapacitor = typeof window !== "undefined" && (window as any).Capacitor !== undefined;
       
-      const registration = await navigator.serviceWorker.ready;
-      
-      // Get public key
-      const response = await fetch("/api/vapidPublicKey");
-      const vapidPublicKey = await response.text();
-      const convertedVapidKey = urlBase64ToUint8Array(vapidPublicKey);
+      let fcmToken = null;
+      let subscriptionObject = null;
 
-      const subscription = await registration.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: convertedVapidKey
-      });
+      if (isCapacitor) {
+        // Handle Capacitor Mobile Push Notifications (FCM)
+        const PushNotifications = (window as any).Capacitor.Plugins.PushNotifications;
+        if (PushNotifications) {
+          let permStatus = await PushNotifications.checkPermissions();
+          if (permStatus.receive === 'prompt') {
+            permStatus = await PushNotifications.requestPermissions();
+          }
+          if (permStatus.receive !== 'granted') {
+            throw new Error('User denied push permission');
+          }
+          
+          await PushNotifications.register();
+          
+          // Wait for token using a Promise
+          fcmToken = await new Promise((resolve, reject) => {
+            PushNotifications.addListener('registration', (token: any) => {
+              resolve(token.value);
+            });
+            PushNotifications.addListener('registrationError', (error: any) => {
+              reject(error);
+            });
+            // Timeout just in case it doesn't fire
+            setTimeout(() => resolve(null), 5000);
+          });
+        }
+      } else if ("serviceWorker" in navigator && "PushManager" in window) {
+        // Handle Web Push (PWA/Browser)
+        const registration = await navigator.serviceWorker.ready;
+        
+        // Get public key
+        const response = await apiFetch("/api/vapidPublicKey");
+        const vapidPublicKey = await response.text();
+        const convertedVapidKey = urlBase64ToUint8Array(vapidPublicKey);
 
-      await fetch("/api/notifications/subscribe", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          subscriptionObject: subscription,
-          deviceName: navigator.userAgent
-        })
-      });
-      console.log("Push notifications subscribed!");
+        subscriptionObject = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: convertedVapidKey
+        });
+      }
+
+      if (fcmToken || subscriptionObject) {
+        await apiFetch("/api/notifications/subscribe", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            subscriptionObject,
+            fcmToken,
+            deviceName: navigator.userAgent
+          })
+        });
+        console.log("Push notifications subscribed!");
+      }
     } catch (e) {
       console.error("Failed to subscribe to push notifications", e);
     }
@@ -212,10 +250,10 @@ export function ClientDashboard() {
       formData.append("competence", selectedCompetence);
       formData.append("file", file);
 
-      await fetch("/api/client/upload", {
+      await apiFetch("/api/client/upload", {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${token}`,
+          
         },
         body: formData,
       });
@@ -232,9 +270,9 @@ export function ClientDashboard() {
     if (e) e.preventDefault();
     const token = localStorage.getItem("clientToken") || sessionStorage.getItem("clientToken");
     try {
-      await fetch("/api/client/update-billing", {
+      await apiFetch("/api/client/update-billing", {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        headers: { "Content-Type": "application/json",  },
         body: JSON.stringify({ month: selectedCompetence, ...billingForm })
       });
       setShowBillingForm(false);
@@ -265,9 +303,9 @@ export function ClientDashboard() {
 
       if (parsedData.length > 0) {
         const token = localStorage.getItem("clientToken") || sessionStorage.getItem("clientToken");
-        await fetch("/api/client/bulk-billing", {
+        await apiFetch("/api/client/bulk-billing", {
           method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          headers: { "Content-Type": "application/json",  },
           body: JSON.stringify({ data: parsedData })
         });
         loadData();
@@ -280,11 +318,11 @@ export function ClientDashboard() {
   const handleMarkAsPaid = async (docId: string) => {
     const token = localStorage.getItem("clientToken") || sessionStorage.getItem("clientToken");
     try {
-      const res = await fetch(`/api/client/mark-doc/${docId}`, {
+      const res = await apiFetch(`/api/client/mark-doc/${docId}`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`
+          
         },
         body: JSON.stringify({ status: "paid" })
       });
@@ -414,6 +452,11 @@ export function ClientDashboard() {
 
   // Filter pending ones explicitly
   const pendingDocs = allCurrentDocs.filter((d: any) => d.status !== "paid" && d.dueDate);
+
+  const totalPendingValue = pendingDocs.reduce((sum: number, doc: any) => {
+    const val = doc.extractedData?.extractedValue;
+    return sum + (typeof val === 'number' ? val : 0);
+  }, 0);
 
   // Sort documents: Overdue first, followed by soon-to-expire, standard pending, and paid
   const sortedExpirations = [...allCurrentDocs].sort((a: any, b: any) => {
@@ -616,7 +659,7 @@ export function ClientDashboard() {
                               <span className="flex items-center gap-1">
                                 <Calendar className="w-3 h-3 text-slate-400" /> Vencimento: <strong className="text-slate-700 dark:text-slate-300 font-extrabold">{doc.dueDate ? (doc.dueDate.includes("-") ? `${doc.dueDate.split("T")[0].split("-")[2]}/${doc.dueDate.split("T")[0].split("-")[1]}/${doc.dueDate.split("T")[0].split("-")[0]}` : doc.dueDate) : "N/D"}</strong>
                               </span>
-                              {doc.extractedData?.extractedValue && (
+                              {doc.extractedData?.extractedValue && !['contracheque', 'outros', 'payroll'].includes(doc.category?.toLowerCase()) && (
                                 <>
                                   <span>•</span>
                                   <span className="font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1">
@@ -690,7 +733,7 @@ export function ClientDashboard() {
                           )}
 
 
-                          {doc.status !== "paid" && doc.dueDate && (
+                          {doc.status !== "paid" && doc.dueDate && !['contracheque', 'outros', 'payroll'].includes(doc.category?.toLowerCase()) && (
                             <button 
                               onClick={() => handleMarkAsPaid(doc.id)}
                               className="flex-1 sm:flex-none h-10 px-3 bg-slate-900 border border-slate-900 hover:bg-slate-800 dark:bg-emerald-500 dark:border-emerald-500 dark:text-white dark:hover:bg-emerald-600 text-white text-xs font-bold rounded-xl shadow-xs transition-transform active:scale-95"
@@ -752,6 +795,11 @@ export function ClientDashboard() {
             <h3 className="text-xl font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
               {pendingDocs.length} {pendingDocs.length === 1 ? 'pendência' : 'pendências'}
             </h3>
+            {pendingDocs.length > 0 && (
+              <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400">
+                Total: {totalPendingValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+              </p>
+            )}
             <p className="text-[10px] text-slate-500">
               {pendingDocs.length === 0 ? "🎉 Tudo pago e em dia!" : "⚠️ Requer atenção no vencimento"}
             </p>
@@ -852,14 +900,33 @@ export function ClientDashboard() {
             <div className="absolute top-0 right-0 p-12 bg-white/5 rounded-full translate-x-8 -translate-y-8 pointer-events-none"></div>
             <h4 className="font-extrabold text-sm tracking-tight mb-2">Suporte e Plantão Contábil 📞</h4>
             <p className="text-slate-300 text-xs leading-relaxed mb-4">
-              Dúvidas na declaração do faturamento ou na conciliação bancária do seu extrato? Fale direto em nosso chat ou use o Cofre Digital.
+              Dúvidas na declaração do faturamento ou na conciliação bancária do seu extrato? Fale direto em nosso chat.
             </p>
-            <button 
-              onClick={() => alert("Suporte técnico acionado! Nosso plantonista entrará em contato em breve.")}
-              className="w-full text-center py-2 bg-emerald-500 hover:bg-emerald-600 text-white font-extrabold text-xs rounded-xl transition-all"
+            <a 
+              href={`https://wa.me/${whatsappSupport.replace(/\D/g, '')}`}
+              target="_blank"
+              rel="noreferrer"
+              className="w-full inline-block text-center py-2 bg-emerald-500 hover:bg-emerald-600 text-white font-extrabold text-xs rounded-xl transition-all"
             >
               Iniciar Chat de Plantão
-            </button>
+            </a>
+          </div>
+
+          {/* SISTEMA FINANCEIRO */}
+          <div className="bg-gradient-to-br from-indigo-900 to-purple-900 text-white rounded-3xl p-6 relative overflow-hidden shadow-md mt-6">
+            <div className="absolute top-0 right-0 p-12 bg-white/5 rounded-full translate-x-8 -translate-y-8 pointer-events-none"></div>
+            <h4 className="font-extrabold text-sm tracking-tight mb-2">Gestão Financeira Completa 💼</h4>
+            <p className="text-indigo-200 text-xs leading-relaxed mb-4">
+              Tenha acesso a um sistema financeiro completo para gerenciar sua empresa. Controle de caixa, emissão de boletos e mais.
+            </p>
+            <a 
+              href="https://financeiro.virgulacontabil.com.br"
+              target="_blank"
+              rel="noreferrer"
+              className="w-full inline-block text-center py-2 bg-white/20 hover:bg-white/30 text-white font-extrabold text-xs rounded-xl transition-all backdrop-blur-sm"
+            >
+              Acessar Sistema Financeiro
+            </a>
           </div>
 
         </div>

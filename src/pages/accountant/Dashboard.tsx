@@ -1,3 +1,4 @@
+import { apiFetch } from "../../lib/apiClient";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { format, parseISO } from "date-fns";
@@ -9,8 +10,8 @@ export function AccountantDashboard() {
 
   useEffect(() => {
     // Carregar Caixa de Entrada (Uploads dos clientes)
-    fetch("/api/accountant/inbox", {
-      headers: { Authorization: `Bearer ${localStorage.getItem("accountantToken")}` }
+    apiFetch("/api/accountant/inbox", {
+      
     })
       .then(r => r.json())
       .then(res => setData({ inbox: res.docs }));

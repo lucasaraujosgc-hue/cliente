@@ -1,3 +1,4 @@
+import { apiFetch } from "../../lib/apiClient";
 import React, { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Users, Search, ChevronRight, Plus, X, Edit, Trash2, Megaphone, CheckSquare, Square, Upload } from "lucide-react";
@@ -22,8 +23,8 @@ export function ClientsList() {
   const [isImporting, setIsImporting] = useState(false);
 
   const loadClients = () => {
-    fetch("/api/accountant/clients", {
-      headers: { Authorization: `Bearer ${localStorage.getItem("accountantToken")}` }
+    apiFetch("/api/accountant/clients", {
+      
     })
       .then(r => r.json())
       .then(data => setClients(data.clients));
@@ -56,9 +57,9 @@ export function ClientsList() {
         if (cnpj && name) {
            cnpj = String(cnpj).replace(/\D/g, "");
            try {
-              const res = await fetch("/api/accountant/clients", {
+              const res = await apiFetch("/api/accountant/clients", {
                 method: "POST",
-                headers: { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("accountantToken")}` },
+                headers: { "Content-Type": "application/json",  },
                 body: JSON.stringify({ cnpj, name, accountantCategory, integrationHash: "" })
               });
               if (res.ok) successCount++;
@@ -95,20 +96,20 @@ export function ClientsList() {
     setIsSubmitting(true);
     
     if (editClient) {
-      await fetch(`/api/accountant/client/${editClient.id}`, {
+      await apiFetch(`/api/accountant/client/${editClient.id}`, {
         method: "PUT",
         headers: { 
           "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("accountantToken")}` 
+           
         },
         body: JSON.stringify(clientForm)
       });
     } else {
-      await fetch("/api/accountant/clients", {
+      await apiFetch("/api/accountant/clients", {
         method: "POST",
         headers: { 
           "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("accountantToken")}` 
+           
         },
         body: JSON.stringify(clientForm)
       });
@@ -125,11 +126,9 @@ export function ClientsList() {
     e.preventDefault();
     e.stopPropagation();
     if (window.confirm("Deseja realmente excluir este cliente? Toda a dependência no banco de dados será apagada.")) {
-      await fetch(`/api/accountant/client/${id}`, {
+      await apiFetch(`/api/accountant/client/${id}`, {
         method: "DELETE",
-        headers: { 
-          Authorization: `Bearer ${localStorage.getItem("accountantToken")}` 
-        }
+        
       });
       loadClients();
     }
@@ -161,11 +160,11 @@ export function ClientsList() {
       return;
     }
     setIsSendingMural(true);
-    await fetch("/api/accountant/message/bulk", {
+    await apiFetch("/api/accountant/message/bulk", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${localStorage.getItem("accountantToken")}`
+        
       },
       body: JSON.stringify({ clientIds: muralSelectedIds, content: muralMessage })
     });

@@ -1,3 +1,4 @@
+import { apiFetch } from "../../lib/apiClient";
 import React, { useEffect, useState, useRef, FormEvent } from "react";
 import { useParams, Link } from "react-router-dom";
 import { ArrowLeft, Send, UploadCloud, MessageSquare, FileSpreadsheet, Edit3, DollarSign, Calendar, PlusCircle, Check, Trash2, Download, AlertCircle, X, CheckCircle } from "lucide-react";
@@ -55,11 +56,11 @@ export function ClientDetail() {
         })).filter(r => r.month && r.month.includes("/"));
 
         if (parsedData.length > 0) {
-          const res = await fetch(`/api/accountant/client/${id}/bulk-billing`, {
+          const res = await apiFetch(`/api/accountant/client/${id}/bulk-billing`, {
             method: "POST",
             headers: { 
               "Content-Type": "application/json", 
-              Authorization: `Bearer ${localStorage.getItem("accountantToken")}` 
+               
             },
             body: JSON.stringify({ data: parsedData })
           });
@@ -88,11 +89,11 @@ export function ClientDetail() {
     }
     
     try {
-      const res = await fetch(`/api/accountant/client/${id}/update-billing`, {
+      const res = await apiFetch(`/api/accountant/client/${id}/update-billing`, {
          method: "POST",
          headers: {
            "Content-Type": "application/json",
-           Authorization: `Bearer ${localStorage.getItem("accountantToken")}`
+           
          },
          body: JSON.stringify(billingForm)
       });
@@ -119,8 +120,8 @@ export function ClientDetail() {
   };
 
   const loadData = () => {
-    fetch(`/api/accountant/client/${id}`, {
-      headers: { Authorization: `Bearer ${localStorage.getItem("accountantToken")}` }
+    apiFetch(`/api/accountant/client/${id}`, {
+      
     })
       .then(r => r.json())
       .then(setData);
@@ -132,10 +133,10 @@ export function ClientDetail() {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
     formData.append("clientId", id as string);
-    await fetch("/api/accountant/upload-doc", {
+    await apiFetch("/api/accountant/upload-doc", {
       method: "POST",
       headers: { 
-        Authorization: `Bearer ${localStorage.getItem("accountantToken")}`,
+        
       },
       body: formData
     });
@@ -150,10 +151,10 @@ export function ClientDetail() {
     const content = formData.get("content") as string;
     
     if (editingMsg) {
-      await fetch(`/api/accountant/message/${editingMsg.id}`, {
+      await apiFetch(`/api/accountant/message/${editingMsg.id}`, {
         method: "PUT",
         headers: { 
-          Authorization: `Bearer ${localStorage.getItem("accountantToken")}`,
+          
           "Content-Type": "application/json"
         },
         body: JSON.stringify({ content })
@@ -161,10 +162,10 @@ export function ClientDetail() {
       setEditingMsg(null);
       alert("Mensagem atualizada!");
     } else {
-      await fetch("/api/accountant/message", {
+      await apiFetch("/api/accountant/message", {
         method: "POST",
         headers: { 
-          Authorization: `Bearer ${localStorage.getItem("accountantToken")}`,
+          
           "Content-Type": "application/json"
         },
         body: JSON.stringify({ 
@@ -181,18 +182,18 @@ export function ClientDetail() {
 
   const deleteMessage = async (msgId: string) => {
     if (!confirm("Excluir esta mensagem?")) return;
-    await fetch(`/api/accountant/message/${msgId}`, {
+    await apiFetch(`/api/accountant/message/${msgId}`, {
       method: "DELETE",
-      headers: { Authorization: `Bearer ${localStorage.getItem("accountantToken")}` }
+      
     });
     loadData();
   };
 
   const markDocOk = async (docId: string) => {
-    await fetch(`/api/accountant/document/${docId}/status`, {
+    await apiFetch(`/api/accountant/document/${docId}/status`, {
       method: "POST",
       headers: { 
-        Authorization: `Bearer ${localStorage.getItem("accountantToken")}`,
+        
         "Content-Type": "application/json"
       },
       body: JSON.stringify({ status: "ok" })
@@ -201,10 +202,10 @@ export function ClientDetail() {
   };
 
   const markDocStatus = async (docId: string, status: string) => {
-    await fetch(`/api/accountant/document/${docId}/status`, {
+    await apiFetch(`/api/accountant/document/${docId}/status`, {
       method: "POST",
       headers: { 
-        Authorization: `Bearer ${localStorage.getItem("accountantToken")}`,
+        
         "Content-Type": "application/json"
       },
       body: JSON.stringify({ status })
@@ -225,10 +226,10 @@ export function ClientDetail() {
     if (editDocForm.file) formData.append("file", editDocForm.file);
 
     try {
-      const res = await fetch(`/api/accountant/document/${editingDocId}`, {
+      const res = await apiFetch(`/api/accountant/document/${editingDocId}`, {
         method: "PUT",
         headers: {
-          Authorization: `Bearer ${localStorage.getItem("accountantToken")}`,
+          
         },
         body: formData,
       });
@@ -670,9 +671,9 @@ export function ClientDetail() {
           {data.client.integrationHash ? (
             <button 
               onClick={async () => {
-                await fetch(`/api/accountant/client/${id}/revoke-token`, {
+                await apiFetch(`/api/accountant/client/${id}/revoke-token`, {
                   method: "POST",
-                  headers: { Authorization: `Bearer ${localStorage.getItem("accountantToken")}` }
+                  
                 });
                 loadData();
               }}
@@ -683,9 +684,9 @@ export function ClientDetail() {
           ) : (
             <button 
               onClick={async () => {
-                await fetch(`/api/accountant/client/${id}/generate-token`, {
+                await apiFetch(`/api/accountant/client/${id}/generate-token`, {
                   method: "POST",
-                  headers: { Authorization: `Bearer ${localStorage.getItem("accountantToken")}` }
+                  
                 });
                 loadData();
               }}

@@ -1,3 +1,4 @@
+import { apiFetch } from "../../lib/apiClient";
 import React, { useState, useEffect, useMemo } from "react";
 import { format, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -18,8 +19,8 @@ export function FileGallery() {
   const fetchFiles = async () => {
     try {
       const token = localStorage.getItem("accountantToken");
-      const res = await fetch("/api/accountant/files", {
-        headers: { Authorization: `Bearer ${token}` }
+      const res = await apiFetch("/api/accountant/files", {
+        
       });
       const data = await res.json();
       if (res.ok) {
@@ -89,11 +90,11 @@ export function FileGallery() {
     setIsDeleting(true);
     try {
       const token = localStorage.getItem("accountantToken");
-      const res = await fetch("/api/accountant/files/bulk", {
+      const res = await apiFetch("/api/accountant/files/bulk", {
         method: "DELETE",
         headers: { 
           "Content-Type": "application/json",
-          Authorization: `Bearer ${token}` 
+           
         },
         body: JSON.stringify({ fileIds: ids })
       });
@@ -139,11 +140,11 @@ export function FileGallery() {
         let blob;
         const authUrl = getAuthenticatedFileUrl(f.fileUrl);
         if (f.fileUrl.startsWith("data:")) {
-          const res = await fetch(f.fileUrl);
+          const res = await apiFetch(f.fileUrl);
           blob = await res.blob();
         } else {
           // fetch from server
-          const res = await fetch(authUrl);
+          const res = await apiFetch(authUrl);
           blob = await res.blob();
         }
         

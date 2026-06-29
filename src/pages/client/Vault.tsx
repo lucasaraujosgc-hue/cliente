@@ -1,3 +1,4 @@
+import { apiFetch } from "../../lib/apiClient";
 import { useState, useEffect, FormEvent } from "react";
 import { Folder, Receipt, FileIcon, Eye, Download, UploadCloud, Clock, AlertTriangle, CheckCircle, ChevronLeft, ChevronRight, QrCode } from "lucide-react";
 import { format, parseISO, differenceInDays, subMonths } from "date-fns";
@@ -26,8 +27,8 @@ export function ClientVault() {
   };
 
   const loadDocs = () => {
-    fetch("/api/client/dashboard", {
-      headers: { Authorization: `Bearer ${localStorage.getItem("clientToken") || sessionStorage.getItem("clientToken")}` }
+    apiFetch("/api/client/dashboard", {
+      
     })
       .then(r => r.json())
       .then(data => setDocs(data.documents || []))
@@ -41,10 +42,10 @@ export function ClientVault() {
     const formData = new FormData(e.currentTarget);
     const title = formData.get("title") as string;
     
-    await fetch("/api/client/upload", {
+    await apiFetch("/api/client/upload", {
       method: "POST",
       headers: { 
-        Authorization: `Bearer ${localStorage.getItem("clientToken") || sessionStorage.getItem("clientToken")}`,
+        
         "Content-Type": "application/json"
       },
       body: JSON.stringify({ title, category: "upload" })

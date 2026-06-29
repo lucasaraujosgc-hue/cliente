@@ -64,7 +64,8 @@ export const messages = pgTable('messages', {
 export const subscriptions = pgTable('subscriptions', {
   id: uuid('id').primaryKey().defaultRandom(),
   clientId: uuid('client_id').references(() => clients.id).notNull(),
-  subscriptionObject: json('subscription_object').notNull(),
+  subscriptionObject: json('subscription_object'),
+  fcmToken: text('fcm_token'),
   deviceName: text('device_name'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
@@ -91,6 +92,7 @@ export const serproConfig = pgTable('serpro_config', {
   certSenha: text('cert_senha'),
   cnpjContratante: text('cnpj_contratante'),
   ambiente: text('ambiente').default('trial'),
+  whatsappSupport: text('whatsapp_support'),
   updatedAt: timestamp('updated_at').defaultNow(),
 });
 

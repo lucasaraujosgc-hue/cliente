@@ -1,3 +1,4 @@
+import { apiFetch } from "../../lib/apiClient";
 import { useState, useEffect, FormEvent } from "react";
 import { UploadCloud, Folder, FileIcon, Eye, Download } from "lucide-react";
 import { format, parseISO } from "date-fns";
@@ -7,8 +8,8 @@ export function ClientUploads() {
   const [docs, setDocs] = useState<any[]>([]);
 
   const loadDocs = () => {
-    fetch("/api/client/dashboard", {
-      headers: { Authorization: `Bearer ${localStorage.getItem("clientToken") || sessionStorage.getItem("clientToken")}` }
+    apiFetch("/api/client/dashboard", {
+      
     })
       .then(r => r.json())
       .then(data => setDocs(data.documents || []))
@@ -22,10 +23,10 @@ export function ClientUploads() {
     const formData = new FormData(e.currentTarget);
     formData.append("category", "upload");
     
-    await fetch("/api/client/upload", {
+    await apiFetch("/api/client/upload", {
       method: "POST",
       headers: { 
-        Authorization: `Bearer ${localStorage.getItem("clientToken") || sessionStorage.getItem("clientToken")}`,
+        
       },
       body: formData
     });

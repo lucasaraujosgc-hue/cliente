@@ -1,3 +1,4 @@
+import { apiFetch } from "../../lib/apiClient";
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Calculator } from "lucide-react";
@@ -18,7 +19,7 @@ export function SetupProfile() {
     const token = localStorage.getItem("clientToken") || sessionStorage.getItem("clientToken");
     
     try {
-      const res = await fetch("/api/client/setup-profile", {
+      const res = await apiFetch("/api/client/setup-profile", {
         method: "POST",
         headers: { 
           "Content-Type": "application/json",

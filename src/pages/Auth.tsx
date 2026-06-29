@@ -1,6 +1,7 @@
 import React, { useState, FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { Calculator } from "lucide-react";
+import { apiFetch } from "../lib/apiClient";
 
 export function Login() {
   const [cnpj, setCnpj] = useState("");
@@ -36,7 +37,7 @@ export function Login() {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const res = await fetch("/api/auth/client/login", {
+      const res = await apiFetch("/api/auth/client/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ cnpj, password })
@@ -75,7 +76,7 @@ export function Login() {
     setResetMsg({ text: "", type: "" });
     setIsResetLoading(true);
     try {
-      const res = await fetch("/api/auth/client/forgot-password", {
+      const res = await apiFetch("/api/auth/client/forgot-password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ cnpj: resetCnpj })
@@ -98,7 +99,7 @@ export function Login() {
     setResetMsg({ text: "", type: "" });
     setIsResetLoading(true);
     try {
-      const res = await fetch("/api/auth/client/reset-password", {
+      const res = await apiFetch("/api/auth/client/reset-password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ cnpj: resetCnpj, token: resetToken, newPassword: resetNewPassword })
@@ -322,7 +323,7 @@ export function AccountantLogin() {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const res = await fetch("/api/auth/accountant/login", {
+      const res = await apiFetch("/api/auth/accountant/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username, password })

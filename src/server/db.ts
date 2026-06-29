@@ -71,12 +71,16 @@ export async function initDb() {
 
     await client.query(`ALTER TABLE "clients" ADD COLUMN IF NOT EXISTS "reset_token" text;`);
     await client.query(`ALTER TABLE "clients" ADD COLUMN IF NOT EXISTS "reset_token_expires" text;`);
+    await client.query(`ALTER TABLE "serpro_config" ADD COLUMN IF NOT EXISTS "whatsapp_support" text;`);
+    await client.query(`ALTER TABLE "subscriptions" ALTER COLUMN "subscription_object" DROP NOT NULL;`);
+    await client.query(`ALTER TABLE "subscriptions" ADD COLUMN IF NOT EXISTS "fcm_token" text;`);
     
     await client.query(`
       CREATE TABLE IF NOT EXISTS "subscriptions" (
         "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
         "client_id" uuid NOT NULL REFERENCES "clients"("id"),
-        "subscription_object" jsonb NOT NULL,
+        "subscription_object" jsonb,
+        "fcm_token" text,
         "device_name" text,
         "created_at" timestamp DEFAULT now() NOT NULL
       );
