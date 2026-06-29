@@ -33,14 +33,14 @@ export const apiFetch = async (
     headers,
   });
 
-  if (response.status === 401) {
+  if (response.status === 401 && !endpoint.includes('/api/auth/')) {
     if (userType === "client") {
       localStorage.removeItem("clientToken");
       sessionStorage.removeItem("clientToken");
-      window.location.href = "/auth";
+      window.location.href = "/login";
     } else {
       localStorage.removeItem("accountantToken");
-      window.location.href = "/accountant/login";
+      window.location.href = "/admin/login";
     }
   }
 

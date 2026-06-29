@@ -16,13 +16,14 @@ import {
   scheduledNotifications,
 } from "./schema";
 import webpush from "web-push";
-import admin from "firebase-admin";
+import { initializeApp, cert, getApps } from "firebase-admin/app";
+import { getMessaging } from "firebase-admin/messaging";
 
 // Initialize Firebase Admin if credentials are provided
 if (process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_CLIENT_EMAIL && process.env.FIREBASE_PRIVATE_KEY) {
   try {
-    admin.initializeApp({
-      credential: admin.credential.cert({
+    initializeApp({
+      credential: cert({
         projectId: process.env.FIREBASE_PROJECT_ID,
         clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
         // Handle escaped newlines in the private key
@@ -218,9 +219,9 @@ async function sendClientNotification(clientId: string, title: string, body: str
       }
     }
     
-    if (sub.fcmToken && admin.apps.length > 0) {
+    if (sub.fcmToken && getApps().length > 0) {
       try {
-        await admin.messaging().send({
+        await getMessaging().send({
           token: sub.fcmToken,
           notification: { title, body }
         });
@@ -2364,9 +2365,9 @@ export function setupRoutes(app: Express) {
           }
 
           // 2. Firebase Cloud Messaging (Capacitor Android/iOS app)
-          if (sub.fcmToken && admin.apps.length > 0) {
+          if (sub.fcmToken && getApps().length > 0) {
             pushes.push(
-              admin.messaging().send({
+              getMessaging().send({
                 token: sub.fcmToken,
                 notification: {
                   title,
@@ -2522,9 +2523,9 @@ async function sendPushToClients(clientId: string | null, title: string, body: s
         );
       }
       
-      if (sub.fcmToken && admin.apps.length > 0) {
+      if (sub.fcmToken && getApps().length > 0) {
         pushes.push(
-          admin.messaging().send({
+          getMessaging().send({
             token: sub.fcmToken,
             notification: { title, body }
           }).catch(err => console.error("Error sending FCM sweep", err))

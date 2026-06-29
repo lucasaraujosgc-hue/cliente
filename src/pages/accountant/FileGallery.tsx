@@ -21,7 +21,7 @@ export function FileGallery() {
       const token = localStorage.getItem("accountantToken");
       const res = await apiFetch("/api/accountant/files", {
         
-      });
+      }, "accountant");
       const data = await res.json();
       if (res.ok) {
         setFiles(data.files || []);
@@ -97,7 +97,7 @@ export function FileGallery() {
            
         },
         body: JSON.stringify({ fileIds: ids })
-      });
+      }, "accountant");
       if (res.ok) {
         setSelectedFiles(new Set());
         await fetchFiles();
@@ -140,11 +140,11 @@ export function FileGallery() {
         let blob;
         const authUrl = getAuthenticatedFileUrl(f.fileUrl);
         if (f.fileUrl.startsWith("data:")) {
-          const res = await apiFetch(f.fileUrl);
+          const res = await apiFetch(f.fileUrl, {}, "accountant");
           blob = await res.blob();
         } else {
           // fetch from server
-          const res = await apiFetch(authUrl);
+          const res = await apiFetch(authUrl, {}, "accountant");
           blob = await res.blob();
         }
         

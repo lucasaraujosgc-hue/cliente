@@ -29,7 +29,7 @@ export function Settings() {
       const token = localStorage.getItem("accountantToken");
       const res = await apiFetch("/api/pendencies/sitfis/config", {
         
-      });
+      }, "accountant");
       const data = await res.json();
       if (data.config) {
         setFormData({
@@ -75,7 +75,7 @@ export function Settings() {
       const res = await apiFetch("/api/pendencies/sitfis/config", {
         method: "POST",
         body: payload
-      });
+      }, "accountant");
 
       if (!res.ok) {
         let errStr = "Falha ao salvar configuração";

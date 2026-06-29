@@ -441,6 +441,7 @@ export function ClientDashboard() {
   // Calculate global overdue documents (across all competencies)
   const allOverdueDocs = data.documents.filter((d: any) => {
     if (d.status === "paid" || d.category === "bank_statement" || d.category === "SITFIS_RECEITA" || d.category?.toLowerCase() === "sitfis") return false;
+    if (['contracheque', 'outros', 'payroll'].includes(d.category?.toLowerCase())) return false;
     const dueInfo = getDocDueStatus(d);
     return dueInfo.isOverdue;
   });
@@ -451,7 +452,11 @@ export function ClientDashboard() {
   }, 0);
 
   // Filter pending ones explicitly
-  const pendingDocs = allCurrentDocs.filter((d: any) => d.status !== "paid" && d.dueDate);
+  const pendingDocs = allCurrentDocs.filter((d: any) => 
+    d.status !== "paid" && 
+    d.dueDate && 
+    !['contracheque', 'outros', 'payroll'].includes(d.category?.toLowerCase())
+  );
 
   const totalPendingValue = pendingDocs.reduce((sum: number, doc: any) => {
     const val = doc.extractedData?.extractedValue;

@@ -63,7 +63,7 @@ export function ClientDetail() {
                
             },
             body: JSON.stringify({ data: parsedData })
-          });
+          }, "accountant");
           if (res.ok) {
             loadData();
             alert(`Sucesso! ${parsedData.length} registros de faturamento importados com sucesso.`);
@@ -96,7 +96,7 @@ export function ClientDetail() {
            
          },
          body: JSON.stringify(billingForm)
-      });
+      }, "accountant");
       if (res.ok) {
         setBillingForm({ month: "", servicesRevenue: 0, salesRevenue: 0, totalIncomes: 0, servicesTaken: 0 });
         setShowBillingForm(false);
@@ -122,7 +122,7 @@ export function ClientDetail() {
   const loadData = () => {
     apiFetch(`/api/accountant/client/${id}`, {
       
-    })
+    }, "accountant")
       .then(r => r.json())
       .then(setData);
   }
@@ -139,7 +139,7 @@ export function ClientDetail() {
         
       },
       body: formData
-    });
+    }, "accountant");
     (e.target as HTMLFormElement).reset();
     loadData();
     alert("Documento disponibilizado!");
@@ -158,7 +158,7 @@ export function ClientDetail() {
           "Content-Type": "application/json"
         },
         body: JSON.stringify({ content })
-      });
+      }, "accountant");
       setEditingMsg(null);
       alert("Mensagem atualizada!");
     } else {
@@ -172,7 +172,7 @@ export function ClientDetail() {
           clientId: id, 
           content
         })
-      });
+      }, "accountant");
       alert("Mensagem enviada no mural do cliente!");
     }
 
@@ -185,7 +185,7 @@ export function ClientDetail() {
     await apiFetch(`/api/accountant/message/${msgId}`, {
       method: "DELETE",
       
-    });
+    }, "accountant");
     loadData();
   };
 
@@ -197,7 +197,7 @@ export function ClientDetail() {
         "Content-Type": "application/json"
       },
       body: JSON.stringify({ status: "ok" })
-    });
+    }, "accountant");
     loadData();
   };
 
@@ -209,7 +209,7 @@ export function ClientDetail() {
         "Content-Type": "application/json"
       },
       body: JSON.stringify({ status })
-    });
+    }, "accountant");
     loadData();
   };
 
@@ -232,7 +232,7 @@ export function ClientDetail() {
           
         },
         body: formData,
-      });
+      }, "accountant");
 
       if (res.ok) {
         setEditingDocId(null);
@@ -674,7 +674,7 @@ export function ClientDetail() {
                 await apiFetch(`/api/accountant/client/${id}/revoke-token`, {
                   method: "POST",
                   
-                });
+                }, "accountant");
                 loadData();
               }}
               className="text-xs bg-red-50 text-red-600 px-3 py-1.5 rounded-lg font-bold hover:bg-red-100"
@@ -687,7 +687,7 @@ export function ClientDetail() {
                 await apiFetch(`/api/accountant/client/${id}/generate-token`, {
                   method: "POST",
                   
-                });
+                }, "accountant");
                 loadData();
               }}
               className="text-xs bg-slate-900 text-white px-3 py-1.5 rounded-lg font-bold hover:bg-slate-800"

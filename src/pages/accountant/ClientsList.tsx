@@ -25,7 +25,7 @@ export function ClientsList() {
   const loadClients = () => {
     apiFetch("/api/accountant/clients", {
       
-    })
+    }, "accountant")
       .then(r => r.json())
       .then(data => setClients(data.clients));
   };
@@ -61,7 +61,7 @@ export function ClientsList() {
                 method: "POST",
                 headers: { "Content-Type": "application/json",  },
                 body: JSON.stringify({ cnpj, name, accountantCategory, integrationHash: "" })
-              });
+              }, "accountant");
               if (res.ok) successCount++;
               else errCount++;
            } catch {
@@ -103,7 +103,7 @@ export function ClientsList() {
            
         },
         body: JSON.stringify(clientForm)
-      });
+      }, "accountant");
     } else {
       await apiFetch("/api/accountant/clients", {
         method: "POST",
@@ -112,7 +112,7 @@ export function ClientsList() {
            
         },
         body: JSON.stringify(clientForm)
-      });
+      }, "accountant");
     }
     
     setShowModal(false);
@@ -129,7 +129,7 @@ export function ClientsList() {
       await apiFetch(`/api/accountant/client/${id}`, {
         method: "DELETE",
         
-      });
+      }, "accountant");
       loadClients();
     }
   };
@@ -167,7 +167,7 @@ export function ClientsList() {
         
       },
       body: JSON.stringify({ clientIds: muralSelectedIds, content: muralMessage })
-    });
+    }, "accountant");
     setMuralMessage("");
     setMuralSelectedIds([]);
     setShowMuralModal(false);

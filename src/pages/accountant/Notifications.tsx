@@ -34,7 +34,7 @@ export function AccountantNotifications() {
   const loadClients = () => {
     apiFetch("/api/accountant/clients", {
       
-    })
+    }, "accountant")
       .then(res => res.json())
       .then(data => setClients(data.clients || []));
   };
@@ -42,7 +42,7 @@ export function AccountantNotifications() {
   const loadScheduledRules = () => {
     apiFetch("/api/admin/notifications/scheduled", {
       
-    })
+    }, "accountant")
       .then(res => res.json())
       .then(data => setScheduledRules(data.list || []))
       .catch(err => console.error("Erro ao carregar agendamentos:", err));
@@ -51,7 +51,7 @@ export function AccountantNotifications() {
   const loadSolicitacoes = () => {
     apiFetch("/api/accountant/solicitacoes", {
       
-    })
+    }, "accountant")
       .then(res => res.json())
       .then(data => setSolicitacoes(data.solicitacoes || []))
       .catch(err => console.error("Erro ao carregar solicitações:", err));
@@ -83,7 +83,7 @@ export function AccountantNotifications() {
           title: formImmediate.title,
           body: formImmediate.body
         })
-      });
+      }, "accountant");
       if (res.ok) {
         alert("Notificação push disparada com sucesso!");
         setFormImmediate({ title: "", body: "" });
@@ -115,7 +115,7 @@ export function AccountantNotifications() {
           scheduleDay: formScheduled.type === "recurrent" ? formScheduled.scheduleDay : null,
           scheduleTime: formScheduled.scheduleTime
         })
-      });
+      }, "accountant");
       if (res.ok) {
         alert("Regra de alerta salva com sucesso!");
         loadScheduledRules();
@@ -144,7 +144,7 @@ export function AccountantNotifications() {
       const res = await apiFetch(`/api/admin/notifications/scheduled/${id}`, {
         method: "DELETE",
         
-      });
+      }, "accountant");
       if (res.ok) {
         loadScheduledRules();
       } else {
@@ -193,7 +193,7 @@ export function AccountantNotifications() {
         const res = await apiFetch(`/api/accountant/solicitacoes/${id}`, {
             method: "POST",
             body: formData
-        });
+        }, "accountant");
 
         if (res.ok) {
             alert("Guia enviada com sucesso ao cliente!");

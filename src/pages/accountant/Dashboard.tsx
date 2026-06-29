@@ -12,7 +12,7 @@ export function AccountantDashboard() {
     // Carregar Caixa de Entrada (Uploads dos clientes)
     apiFetch("/api/accountant/inbox", {
       
-    })
+    }, "accountant")
       .then(r => r.json())
       .then(res => setData({ inbox: res.docs }));
   }, []);
