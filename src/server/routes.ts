@@ -2269,6 +2269,27 @@ export function setupRoutes(app: Express) {
           .where(eq(serproConfig.usuarioId, 1))
           .limit(1);
 
+        // Testar senha do certificado antes de prosseguir
+        const certPathToTest = req.file ? req.file.path : (config.length > 0 ? config[0].certPath : null);
+        const certSenhaToTest = certSenha !== undefined ? certSenha : (config.length > 0 ? config[0].certSenha : "");
+
+        if (certPathToTest) {
+          try {
+            const pfx = await fs.promises.readFile(certPathToTest);
+            new https.Agent({
+              pfx,
+              passphrase: certSenhaToTest || "",
+            });
+          } catch (err: any) {
+            console.error("Erro ao validar senha do certificado:", err.message);
+            // Se for arquivo recém-subido, exclua para não deixar lixo
+            if (req.file) {
+              await fs.promises.unlink(req.file.path).catch(() => {});
+            }
+            return res.status(400).json({ error: "Senha do certificado incorreta ou certificado inválido." });
+          }
+        }
+
         // Se houver certificado anterior no banco e um novo arquivo foi enviado, exclui o anterior
         if (config.length > 0 && config[0].certPath && req.file) {
           try {

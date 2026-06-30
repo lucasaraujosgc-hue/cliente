@@ -25,6 +25,7 @@ export function ClientOverdue() {
       const overdue = data.documents.filter((doc: any) => {
         if (doc.status === "paid") return false;
         if (!doc.dueDate) return false;
+        if (['contracheque', 'outros', 'payroll', 'nota fiscal', 'nota_fiscal', 'notafiscal'].includes(doc.category?.toLowerCase())) return false;
         
         try {
           let dueDateObj;

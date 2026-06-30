@@ -342,7 +342,7 @@ export function AccountantLayout() {
 
   const handleLogout = () => {
     localStorage.removeItem("accountantToken");
-    navigate("/admin/login");
+    navigate("/login");
   };
 
   const formatSize = (bytes: number) => {

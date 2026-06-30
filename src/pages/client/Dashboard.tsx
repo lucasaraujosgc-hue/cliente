@@ -33,7 +33,17 @@ import * as XLSX from "xlsx";
 import { PixScannerButton } from "../../components/PixScannerButton";
 import { GuiaAtualizarButton } from "../../components/GuiaAtualizarButton";
 
+import { Browser } from "@capacitor/browser";
+
 export function ClientDashboard() {
+  const handleOpenExternal = async (url: string | undefined, e: React.MouseEvent) => {
+    if (!url) return;
+    const isCapacitor = typeof window !== "undefined" && (window as any).Capacitor !== undefined;
+    if (isCapacitor) {
+      e.preventDefault();
+      await Browser.open({ url });
+    }
+  };
   const location = useLocation();
   const navigate = useNavigate();
   
@@ -218,6 +228,7 @@ export function ClientDashboard() {
 
   useEffect(() => {
     loadData();
+    subscribeToPush();
   }, []);
 
   function urlBase64ToUint8Array(base64String: string) {
@@ -440,7 +451,7 @@ export function ClientDashboard() {
   // Calculate global overdue documents (across all competencies)
   const allOverdueDocs = data.documents.filter((d: any) => {
     if (d.status === "paid" || d.category === "bank_statement" || d.category === "SITFIS_RECEITA" || d.category?.toLowerCase() === "sitfis") return false;
-    if (['contracheque', 'outros', 'payroll'].includes(d.category?.toLowerCase())) return false;
+    if (['contracheque', 'outros', 'payroll', 'nota fiscal', 'nota_fiscal', 'notafiscal'].includes(d.category?.toLowerCase())) return false;
     const dueInfo = getDocDueStatus(d);
     return dueInfo.isOverdue;
   });
@@ -454,7 +465,7 @@ export function ClientDashboard() {
   const pendingDocs = allCurrentDocs.filter((d: any) => 
     d.status !== "paid" && 
     d.dueDate && 
-    !['contracheque', 'outros', 'payroll'].includes(d.category?.toLowerCase())
+    !['contracheque', 'outros', 'payroll', 'nota fiscal', 'nota_fiscal', 'notafiscal'].includes(d.category?.toLowerCase())
   );
 
   const totalPendingValue = pendingDocs.reduce((sum: number, doc: any) => {
@@ -670,7 +681,7 @@ export function ClientDashboard() {
                               <span className="flex items-center gap-1">
                                 <Calendar className="w-3 h-3 text-slate-400" /> Vencimento: <strong className="text-slate-700 dark:text-slate-300 font-extrabold">{doc.dueDate ? (doc.dueDate.includes("-") ? `${doc.dueDate.split("T")[0].split("-")[2]}/${doc.dueDate.split("T")[0].split("-")[1]}/${doc.dueDate.split("T")[0].split("-")[0]}` : doc.dueDate) : "N/D"}</strong>
                               </span>
-                              {doc.extractedData?.extractedValue && !['contracheque', 'outros', 'payroll'].includes(doc.category?.toLowerCase()) && (
+                              {doc.extractedData?.extractedValue && !['contracheque', 'outros', 'payroll', 'nota fiscal', 'nota_fiscal', 'notafiscal'].includes(doc.category?.toLowerCase()) && (
                                 <>
                                   <span>•</span>
                                   <span className="font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1">
@@ -701,6 +712,7 @@ export function ClientDashboard() {
                               target="_blank" 
                               referrerPolicy="no-referrer"
                               rel="noreferrer" 
+                              onClick={(e) => handleOpenExternal(getAuthenticatedFileUrl(doc.fileUrl), e)}
                               className="flex-1 sm:flex-none h-10 px-3 flex items-center justify-center bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 text-xs font-bold rounded-xl text-slate-700 dark:text-slate-300 transition-colors shrink-0"
                               title="Visualizar documento"
                             >
@@ -712,6 +724,7 @@ export function ClientDashboard() {
                               download
                               referrerPolicy="no-referrer"
                               rel="noreferrer" 
+                              onClick={(e) => handleOpenExternal(getAuthenticatedFileUrl(doc.fileUrl), e)}
                               className="h-10 w-10 flex items-center justify-center bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 text-xs font-bold rounded-xl text-slate-700 dark:text-slate-300 transition-colors shrink-0"
                               title="Baixar Arquivo"
                             >
@@ -744,7 +757,7 @@ export function ClientDashboard() {
                           )}
 
 
-                          {doc.status !== "paid" && doc.dueDate && !['contracheque', 'outros', 'payroll'].includes(doc.category?.toLowerCase()) && (
+                          {doc.status !== "paid" && doc.dueDate && !['contracheque', 'outros', 'payroll', 'nota fiscal', 'nota_fiscal', 'notafiscal'].includes(doc.category?.toLowerCase()) && (
                             <button 
                               onClick={() => handleMarkAsPaid(doc.id)}
                               className="flex-1 sm:flex-none h-10 px-3 bg-slate-900 border border-slate-900 hover:bg-slate-800 dark:bg-emerald-500 dark:border-emerald-500 dark:text-white dark:hover:bg-emerald-600 text-white text-xs font-bold rounded-xl shadow-xs transition-transform active:scale-95"
