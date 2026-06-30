@@ -3,8 +3,26 @@ import { useState, useEffect, FormEvent } from "react";
 import { Folder, Receipt, FileIcon, Eye, Download, UploadCloud, Clock, AlertTriangle, CheckCircle, ChevronLeft, ChevronRight, QrCode } from "lucide-react";
 import { format, parseISO, differenceInDays, subMonths } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { Browser } from "@capacitor/browser";
 
 export function ClientVault() {
+  const handleOpenExternal = async (url: string | undefined, e: React.MouseEvent) => {
+    if (!url) return;
+    const isCapacitor = typeof window !== "undefined" && (window as any).Capacitor !== undefined;
+    if (isCapacitor) {
+      e.preventDefault();
+      const absoluteUrl = url.startsWith('http') ? url : `${window.location.origin}${url.startsWith('/') ? '' : '/'}${url}`;
+      await Browser.open({ url: absoluteUrl });
+    }
+  };
+  const getAuthenticatedFileUrl = (url: string | null) => {
+    if (!url) return undefined;
+    if (url.startsWith('/api/')) {
+      const token = localStorage.getItem('clientToken') || sessionStorage.getItem('clientToken');
+      return `${window.location.origin}${url}?token=${token}`;
+    }
+    return url.startsWith('http') ? url : `${window.location.origin}${url.startsWith('/') ? '' : '/'}${url}`;
+  };
   const [docs, setDocs] = useState<any[]>([]);
   const [activeTab, setActiveTab] = useState("company");
   const [selectedCompetence, setSelectedCompetence] = useState(format(subMonths(new Date(), 1), "MM/yyyy"));
@@ -266,10 +284,11 @@ export function ClientVault() {
                       
                       {doc.fileUrl && (
                         <a 
-                          href={doc.fileUrl} 
+                          href={getAuthenticatedFileUrl(doc.fileUrl)} 
                           target="_blank" 
                           referrerPolicy="no-referrer"
                           rel="noreferrer"
+                          onClick={(e) => handleOpenExternal(getAuthenticatedFileUrl(doc.fileUrl), e)}
                           className="h-9 px-3 flex items-center justify-center bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 rounded-xl text-xs font-bold shadow-xs transition-colors shrink-0"
                           title="Visualizar documento"
                         >
@@ -279,11 +298,12 @@ export function ClientVault() {
                       
                       {doc.fileUrl && (
                         <a 
-                          href={doc.fileUrl} 
+                          href={getAuthenticatedFileUrl(doc.fileUrl)} 
                           target="_blank" 
                           download
                           referrerPolicy="no-referrer"
                           rel="noreferrer"
+                          onClick={(e) => handleOpenExternal(getAuthenticatedFileUrl(doc.fileUrl), e)}
                           className="h-9 w-9 flex items-center justify-center bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:bg-slate-50 rounded-xl shadow-xs transition-colors shrink-0"
                           title="Baixar Arquivo"
                         >

@@ -154,9 +154,9 @@ export function ClientDashboard() {
     if (!url) return undefined;
     if (url.startsWith('/api/')) {
       const token = localStorage.getItem('clientToken') || sessionStorage.getItem('clientToken');
-      return `${url}?token=${token}`;
+      return `${window.location.origin}${url}?token=${token}`;
     }
-    return url;
+    return url.startsWith('http') ? url : `${window.location.origin}${url.startsWith('/') ? '' : '/'}${url}`;
   };
 
   const subscribeToPush = async () => {

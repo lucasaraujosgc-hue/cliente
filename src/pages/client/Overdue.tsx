@@ -4,8 +4,18 @@ import { format, isBefore, parseISO, startOfDay, differenceInDays } from "date-f
 import { AlertCircle, FileText, Download, CheckCircle, Clock, RotateCw, Calendar, DollarSign, Send } from "lucide-react";
 import { PixScannerButton } from "../../components/PixScannerButton";
 import { GuiaAtualizarButton } from "../../components/GuiaAtualizarButton";
+import { Browser } from "@capacitor/browser";
 
 export function ClientOverdue() {
+  const handleOpenExternal = async (url: string | undefined, e: React.MouseEvent) => {
+    if (!url) return;
+    const isCapacitor = typeof window !== "undefined" && (window as any).Capacitor !== undefined;
+    if (isCapacitor) {
+      e.preventDefault();
+      const absoluteUrl = url.startsWith('http') ? url : `${window.location.origin}${url.startsWith('/') ? '' : '/'}${url}`;
+      await Browser.open({ url: absoluteUrl });
+    }
+  };
   const [loading, setLoading] = useState(true);
   const [overdueDocs, setOverdueDocs] = useState<any[]>([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -95,9 +105,9 @@ export function ClientOverdue() {
     if (!url) return undefined;
     if (url.startsWith('/api/')) {
       const token = localStorage.getItem('clientToken') || sessionStorage.getItem('clientToken');
-      return `${url}?token=${token}`;
+      return `${window.location.origin}${url}?token=${token}`;
     }
-    return url;
+    return url.startsWith('http') ? url : `${window.location.origin}${url.startsWith('/') ? '' : '/'}${url}`;
   };
 
   const getDaysOverdue = (dueDateStr: string) => {
@@ -225,6 +235,7 @@ export function ClientOverdue() {
                             download
                             target="_blank"
                             rel="noreferrer"
+                            onClick={(e) => handleOpenExternal(getAuthenticatedFileUrl(doc.fileUrl), e)}
                             className="flex-1 sm:flex-none h-8 px-3 bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-lg text-[10px] font-black transition-colors flex items-center justify-center gap-1.5 shadow-xs"
                           >
                             <Download className="w-3.5 h-3.5" />
