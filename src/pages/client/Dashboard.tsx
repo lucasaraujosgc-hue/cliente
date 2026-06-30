@@ -218,7 +218,6 @@ export function ClientDashboard() {
 
   useEffect(() => {
     loadData();
-    subscribeToPush();
   }, []);
 
   function urlBase64ToUint8Array(base64String: string) {
@@ -540,6 +539,13 @@ export function ClientDashboard() {
         </div>
         
         <div className="flex flex-wrap items-center gap-3 mt-2 sm:mt-0">
+          <button
+            onClick={subscribeToPush}
+            className="h-10 px-4 bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 text-xs font-bold rounded-xl border border-indigo-200 dark:border-indigo-500/30 flex items-center shadow-sm transition-colors"
+          >
+            <Bell className="w-4 h-4 mr-2" />
+            Ativar Notificações
+          </button>
           <div className="flex items-center bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden h-10 w-[200px]">
             <button 
               onClick={handlePrevCompetence}
