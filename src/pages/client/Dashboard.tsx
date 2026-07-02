@@ -168,12 +168,31 @@ export function ClientDashboard() {
   };
 
   const handleRequestPushPermission = async () => {
-    if ("Notification" in window) {
-      const permission = await Notification.requestPermission();
-      setPushPermission(permission);
-      if (permission === "granted") {
-        subscribeToPush();
+    try {
+      if ("Notification" in window) {
+        let permission = Notification.permission;
+        
+        // Safari PWA or older browsers might use a callback
+        const requestPromise = Notification.requestPermission((res) => {
+          permission = res;
+        });
+        
+        if (requestPromise && typeof requestPromise.then === "function") {
+          permission = await requestPromise;
+        }
+
+        setPushPermission(permission);
+        if (permission === "granted") {
+          await subscribeToPush();
+        } else if (permission === "denied") {
+          alert("As notificações estão bloqueadas no seu navegador. Você precisa ir nas configurações do navegador ou do aplicativo para permitir.");
+        }
+      } else {
+        alert("Seu dispositivo ou navegador não suporta notificações web (no iOS, você precisa adicionar à Tela de Início primeiro).");
       }
+    } catch (e) {
+      console.error("Erro ao solicitar notificações:", e);
+      alert("Erro ao solicitar permissão de notificações.");
     }
   };
 
@@ -242,9 +261,17 @@ export function ClientDashboard() {
           })
         });
         console.log("Push notifications subscribed!");
+        // We can show a small alert or toast, but console.log is fine.
+        // Let's at least alert if it's not capacitor so they know it worked.
+        if (!isCapacitor) {
+           alert("Notificações ativadas com sucesso!");
+        }
       }
     } catch (e) {
       console.error("Failed to subscribe to push notifications", e);
+      if (!isCapacitor) {
+        alert("Erro ao se inscrever nas notificações. Verifique se o navegador suporta Web Push.");
+      }
     }
   };
 
