@@ -29,6 +29,11 @@ export function SetupProfile() {
       });
       const data = await res.json();
       if (res.ok) {
+        if (localStorage.getItem("clientUser")) {
+          localStorage.setItem("clientUser", JSON.stringify(data.client));
+        } else if (sessionStorage.getItem("clientUser")) {
+          sessionStorage.setItem("clientUser", JSON.stringify(data.client));
+        }
         navigate("/dashboard");
       } else {
         setError(data.error);

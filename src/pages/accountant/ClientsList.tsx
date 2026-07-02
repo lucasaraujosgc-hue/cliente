@@ -1,7 +1,7 @@
 import { apiFetch } from "../../lib/apiClient";
 import React, { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Users, Search, ChevronRight, Plus, X, Edit, Trash2, Megaphone, CheckSquare, Square, Upload } from "lucide-react";
+import { Users, Search, ChevronRight, Plus, X, Edit, Trash2, Megaphone, CheckSquare, Square, Upload, KeyRound } from "lucide-react";
 import * as XLSX from "xlsx";
 
 export function ClientsList() {
@@ -129,6 +129,17 @@ export function ClientsList() {
       await apiFetch(`/api/accountant/client/${id}`, {
         method: "DELETE",
         
+      }, "accountant");
+      loadClients();
+    }
+  };
+
+  const handleResetPassword = async (client: any, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (window.confirm("Deseja realmente resetar a senha deste cliente? A senha voltará a ser o CNPJ e será solicitado a troca no próximo login.")) {
+      await apiFetch(`/api/accountant/client/${client.id}/reset-password`, {
+        method: "POST"
       }, "accountant");
       loadClients();
     }
@@ -389,7 +400,14 @@ export function ClientsList() {
                     {client.name.charAt(0)}
                   </div>
                   <div>
-                    <h4 className="text-sm font-medium text-slate-900">{client.name}</h4>
+                    <div className="flex items-center">
+                      <h4 className="text-sm font-medium text-slate-900">{client.name}</h4>
+                      {client.firstAccessDone && (
+                        <span className="ml-2 px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-100 text-green-700">
+                          Já acessou
+                        </span>
+                      )}
+                    </div>
                     <div className="flex items-center space-x-2 mt-0.5">
                        <p className="text-xs text-slate-500">{client.cnpj}</p>
                        {client.accountantCategory && (
@@ -403,6 +421,13 @@ export function ClientsList() {
                 </div>
                 <div className="flex items-center gap-4">
                   <div className="flex items-center gap-2 mr-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button 
+                      onClick={(e) => handleResetPassword(client, e)}
+                      className="p-1.5 bg-orange-50 hover:bg-orange-100 text-orange-600 rounded-lg transition-colors"
+                      title="Resetar Senha"
+                    >
+                      <KeyRound className="w-4 h-4" />
+                    </button>
                     <button 
                       onClick={(e) => openEditModal(client, e)}
                       className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg transition-colors"

@@ -2001,6 +2001,31 @@ export function setupRoutes(app: Express) {
     },
   );
 
+  app.post(
+    "/api/accountant/client/:id/reset-password",
+    verifyAccountantAuth,
+    async (req, res) => {
+      const clientId = req.params.id;
+      const clientList = await db
+        .select()
+        .from(clients)
+        .where(eq(clients.id, clientId));
+      if (clientList.length === 0)
+        return res.status(404).json({ error: "Client not found" });
+
+      const client = clientList[0];
+      await db
+        .update(clients)
+        .set({ 
+          passwordHash: client.cnpj,
+          firstAccessDone: false
+        })
+        .where(eq(clients.id, clientId));
+
+      res.json({ success: true });
+    },
+  );
+
   // Webhook for External System Integration
   app.post(
     "/api/webhook/documentos",
