@@ -55,7 +55,18 @@ export function ClientDashboard() {
   const [showPwaBanner, setShowPwaBanner] = useState(() => {
     return localStorage.getItem("dismissPwaBanner_v2") !== "true";
   });
-  const [pushPermission, setPushPermission] = useState<string>("granted");
+  const [pushPermission, setPushPermission] = useState<string>(() => {
+    if (typeof window !== "undefined" && "Notification" in window) {
+      return Notification.permission;
+    }
+    return "default";
+  });
+  const [pushDismissed, setPushDismissed] = useState<boolean>(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("dismissedPushPrompt_v1") === "true";
+    }
+    return false;
+  });
   const [isRefreshing, setIsRefreshing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const excelFileRef = useRef<HTMLInputElement>(null);
@@ -167,7 +178,7 @@ export function ClientDashboard() {
     }
   };
 
-  const handleRequestPushPermission = async () => {
+  const handleRequestPushPermission = async (auto = false) => {
     try {
       if ("Notification" in window) {
         let permission = Notification.permission;
@@ -185,14 +196,14 @@ export function ClientDashboard() {
         if (permission === "granted") {
           await subscribeToPush();
         } else if (permission === "denied") {
-          alert("As notificações estão bloqueadas no seu navegador. Você precisa ir nas configurações do navegador ou do aplicativo para permitir.");
+          if (!auto) alert("As notificações estão bloqueadas no seu navegador. Você precisa ir nas configurações do navegador ou do aplicativo para permitir.");
         }
       } else {
-        alert("Seu dispositivo ou navegador não suporta notificações web (no iOS, você precisa adicionar à Tela de Início primeiro).");
+        if (!auto) alert("Seu dispositivo ou navegador não suporta notificações web (no iOS, você precisa adicionar à Tela de Início primeiro).");
       }
     } catch (e) {
       console.error("Erro ao solicitar notificações:", e);
-      alert("Erro ao solicitar permissão de notificações.");
+      if (!auto) alert("Erro ao solicitar permissão de notificações.");
     }
   };
 
@@ -269,17 +280,30 @@ export function ClientDashboard() {
       }
     } catch (e) {
       console.error("Failed to subscribe to push notifications", e);
+      const isCapacitor = typeof window !== "undefined" && (window as any).Capacitor !== undefined;
       if (!isCapacitor) {
         alert("Erro ao se inscrever nas notificações. Verifique se o navegador suporta Web Push.");
       }
     }
   };
 
+
   useEffect(() => {
     loadData();
     checkPushPermission();
-    subscribeToPush();
+    
+    if (typeof window !== "undefined" && "Notification" in window) {
+      if (Notification.permission === "granted") {
+        subscribeToPush();
+      }
+    } else {
+      const isCapacitor = typeof window !== "undefined" && (window as any).Capacitor !== undefined;
+      if (isCapacitor) {
+        subscribeToPush();
+      }
+    }
   }, []);
+
 
   function urlBase64ToUint8Array(base64String: string) {
     const padding = '='.repeat((4 - base64String.length % 4) % 4);
@@ -562,7 +586,7 @@ export function ClientDashboard() {
             <div>
               <h4 className="font-extrabold text-sm sm:text-base tracking-tight">Dica de Aplicativo PWA 📱</h4>
               <p className="text-emerald-100 text-xs mt-1 leading-relaxed max-w-xl">
-                Acesse como aplicativo nativo! Toque em <strong className="text-white hover:underline cursor-pointer">"Compartilhar"</strong> em seu navegador móvel e selecione <strong className="text-white">"Adicionar à Tela de Início"</strong> para enviar extratos e gerenciar vencimentos instantaneamente de seu celular.
+                Acesse como aplicativo nativo! No iOS, <strong className="text-white">esta ação deve ser feita obrigatoriamente através do navegador Safari</strong>: toque no botão de <strong className="text-white hover:underline cursor-pointer">"Compartilhar"</strong> (ícone de quadrado com uma seta para cima) e selecione <strong className="text-white">"Adicionar à Tela de Início"</strong>. No Android, basta tocar nas opções do Chrome e escolher <strong className="text-white">"Instalar aplicativo"</strong>.
               </p>
             </div>
           </div>
@@ -578,39 +602,59 @@ export function ClientDashboard() {
         </div>
       )}
 
-      {/* 🔔 PUSH NOTIFICATION BANNER */}
-      {pushPermission === "default" && typeof window !== "undefined" && !((window as any).Capacitor !== undefined) && (
-        <div className="relative bg-gradient-to-r from-blue-600 to-indigo-700 text-white p-5 rounded-3xl shadow-lg border border-blue-500/20 flex flex-col sm:flex-row items-center sm:justify-between gap-4 overflow-hidden transform duration-250 hover:shadow-xl mt-3">
-          <div className="absolute top-0 right-0 p-16 bg-white/5 rounded-full translate-x-12 -translate-y-12 pointer-events-none"></div>
-          <div className="flex items-center gap-4 z-10">
-            <div className="p-3 bg-white/15 backdrop-blur-md rounded-2xl text-blue-100 animate-pulse shrink-0">
-              <Bell className="w-6 h-6" />
+      {/* 🔔 DIALOG/MODAL FOR PUSH NOTIFICATION REQUEST */}
+      {pushPermission === "default" && !pushDismissed && typeof window !== "undefined" && "Notification" in window && !((window as any).Capacitor !== undefined) && (
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/65 backdrop-blur-md p-4 animate-in fade-in duration-300">
+          <div className="relative w-full max-w-md bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-100 dark:border-slate-800 overflow-hidden animate-in zoom-in-95 duration-300">
+            
+            {/* Header with icon and background pattern */}
+            <div className="relative bg-gradient-to-br from-indigo-600 via-blue-600 to-indigo-700 p-8 text-center text-white flex flex-col items-center">
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.1),transparent_40%)] pointer-events-none"></div>
+              
+              {/* Ring animation */}
+              <div className="relative mb-4">
+                <div className="absolute inset-0 bg-white/20 rounded-full scale-150 animate-ping opacity-75 duration-1000"></div>
+                <div className="relative p-4 bg-white/15 backdrop-blur-md rounded-2xl border border-white/20 shadow-inner">
+                  <Bell className="w-8 h-8 text-white animate-bounce" />
+                </div>
+              </div>
+              
+              <h3 className="text-xl font-extrabold tracking-tight mb-2">Ative as Notificações</h3>
+              <p className="text-indigo-100 text-xs sm:text-sm max-w-xs leading-relaxed">
+                Fique por dentro de tudo! Receba avisos instantâneos sobre vencimentos de impostos, guias prontas e novos documentos diretamente no seu celular.
+              </p>
             </div>
-            <div>
-              <h4 className="font-extrabold text-sm sm:text-base tracking-tight">Ative as Notificações</h4>
-              <p className="text-blue-100 text-xs mt-1 leading-relaxed max-w-xl">
-                Não perca prazos! Ative as notificações para ser avisado sobre vencimentos de impostos e novos documentos importantes.
+            
+            {/* Buttons and footer */}
+            <div className="p-6 bg-slate-50 dark:bg-slate-950/40 flex flex-col gap-3 border-t border-slate-100 dark:border-slate-900">
+              <button 
+                onClick={async () => {
+                  await handleRequestPushPermission(false);
+                }}
+                className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-700 active:scale-[0.98] text-white font-bold rounded-2xl shadow-lg shadow-indigo-600/20 hover:shadow-indigo-600/35 transition-all text-sm flex items-center justify-center gap-2 animate-pulse"
+              >
+                <Check className="w-4 h-4" />
+                Sim, Ativar Notificações
+              </button>
+              
+              <button 
+                onClick={() => {
+                  localStorage.setItem("dismissedPushPrompt_v1", "true");
+                  setPushDismissed(true);
+                }} 
+                className="w-full py-3 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 active:scale-[0.98] text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700 font-semibold rounded-2xl transition-all text-sm flex items-center justify-center"
+              >
+                Agora não
+              </button>
+              
+              <p className="text-[10px] text-center text-slate-400 dark:text-slate-500 leading-normal px-2 mt-1">
+                *No iOS, é necessário utilizar o aplicativo instalado na Tela de Início (PWA) para habilitar esta função nativa.
               </p>
             </div>
           </div>
-          <div className="flex gap-2 shrink-0 z-10 self-end sm:self-center">
-            <button 
-              onClick={handleRequestPushPermission}
-              className="px-4 py-2 bg-white text-blue-700 hover:bg-blue-50 font-bold rounded-xl transition-all text-sm whitespace-nowrap"
-            >
-              Ativar Agora
-            </button>
-            <button 
-              onClick={() => setPushPermission("denied")} 
-              className="p-2 bg-black/10 hover:bg-black/25 rounded-xl text-white transition-all"
-              title="Agora não"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
         </div>
       )}
-
+      
       {/* HEADER SECTION */}
       <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pt-3">
         <div>
@@ -634,7 +678,7 @@ export function ClientDashboard() {
         
         <div className="flex flex-wrap items-center gap-3 mt-2 sm:mt-0">
           <button
-            onClick={subscribeToPush}
+            onClick={() => handleRequestPushPermission(false)}
             className="h-10 px-4 bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 text-xs font-bold rounded-xl border border-indigo-200 dark:border-indigo-500/30 flex items-center shadow-sm transition-colors"
           >
             <Bell className="w-4 h-4 mr-2" />

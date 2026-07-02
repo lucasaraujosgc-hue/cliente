@@ -5,6 +5,7 @@ import { format, parseISO, differenceInDays, subMonths } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { Browser } from "@capacitor/browser";
 
+import React from "react";
 export function ClientVault() {
   const handleOpenExternal = async (url: string | undefined, e: React.MouseEvent) => {
     if (!url) return;
