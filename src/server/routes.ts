@@ -1863,6 +1863,13 @@ export function setupRoutes(app: Express) {
                 content: `O documento **${updated.title || 'Guia'}** foi atualizado/substituído pelo contador.`,
                 direction: "accountant_to_client"
               });
+
+              // Send push notification
+              await sendClientNotification(
+                currentDoc.clientId,
+                "Documento Atualizado 📄",
+                `O documento "${updated.title || 'Guia'}" foi atualizado pelo contador.`
+              ).catch(err => console.error("Error sending push for doc replace:", err));
             }
           }
         }
@@ -1886,6 +1893,13 @@ export function setupRoutes(app: Express) {
         read: false,
       });
 
+      // Send push notification
+      await sendClientNotification(
+        clientId,
+        "Novo Recado no Mural 🔔",
+        content
+      ).catch(err => console.error("Error sending push for single message:", err));
+
       res.json({ success: true });
     },
   );
@@ -1907,6 +1921,16 @@ export function setupRoutes(app: Express) {
       }));
 
       await db.insert(messages).values(newMessages);
+
+      // Send push notification to all selected clients
+      for (const id of clientIds) {
+        await sendClientNotification(
+          id,
+          "Novo Recado no Mural 🔔",
+          content
+        ).catch(err => console.error(`Error sending push for bulk message to client ${id}:`, err));
+      }
+
       res.json({ success: true });
     },
   );

@@ -46,6 +46,12 @@ export function ClientDashboard() {
   };
   const location = useLocation();
   const navigate = useNavigate();
+
+  const isIOS = typeof navigator !== "undefined" && /iPad|iPhone|iPod|Mac/.test(navigator.userAgent) && !(window as any).MSStream;
+  const isStandalone = typeof window !== "undefined" && (
+    (window.navigator as any).standalone || 
+    window.matchMedia('(display-mode: standalone)').matches
+  );
   
   const [data, setData] = useState<any>(null);
   const [whatsappSupport, setWhatsappSupport] = useState("");
@@ -53,7 +59,12 @@ export function ClientDashboard() {
   const [isUploading, setIsUploading] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [showPwaBanner, setShowPwaBanner] = useState(() => {
-    return localStorage.getItem("dismissPwaBanner_v2") !== "true";
+    if (typeof window !== "undefined") {
+      const isStandaloneMode = (window.navigator as any).standalone || window.matchMedia('(display-mode: standalone)').matches;
+      if (isStandaloneMode) return false;
+      return localStorage.getItem("dismissPwaBanner_v2") !== "true";
+    }
+    return true;
   });
   const [pushPermission, setPushPermission] = useState<string>(() => {
     if (typeof window !== "undefined" && "Notification" in window) {
@@ -63,7 +74,7 @@ export function ClientDashboard() {
   });
   const [pushDismissed, setPushDismissed] = useState<boolean>(() => {
     if (typeof window !== "undefined") {
-      return localStorage.getItem("dismissedPushPrompt_v1") === "true";
+      return localStorage.getItem("dismissedPushPrompt_v2") === "true";
     }
     return false;
   });
@@ -603,7 +614,7 @@ export function ClientDashboard() {
       )}
 
       {/* 🔔 DIALOG/MODAL FOR PUSH NOTIFICATION REQUEST */}
-      {pushPermission === "default" && !pushDismissed && typeof window !== "undefined" && "Notification" in window && !((window as any).Capacitor !== undefined) && (
+      {pushPermission === "default" && !pushDismissed && typeof window !== "undefined" && "Notification" in window && !((window as any).Capacitor !== undefined) && (!isIOS || isStandalone) && (
         <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/65 backdrop-blur-md p-4 animate-in fade-in duration-300">
           <div className="relative w-full max-w-md bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-100 dark:border-slate-800 overflow-hidden animate-in zoom-in-95 duration-300">
             
@@ -639,7 +650,7 @@ export function ClientDashboard() {
               
               <button 
                 onClick={() => {
-                  localStorage.setItem("dismissedPushPrompt_v1", "true");
+                  localStorage.setItem("dismissedPushPrompt_v2", "true");
                   setPushDismissed(true);
                 }} 
                 className="w-full py-3 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 active:scale-[0.98] text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700 font-semibold rounded-2xl transition-all text-sm flex items-center justify-center"
