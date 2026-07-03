@@ -45,12 +45,20 @@ let vapidKeys = {
   privateKey: process.env.VAPID_PRIVATE_KEY || "",
 };
 
+if (!vapidKeys.publicKey || !vapidKeys.privateKey) {
+  vapidKeys = webpush.generateVAPIDKeys();
+  console.log(
+    "Generated new VAPID keys for this session (they won't persist after restart):",
+  );
+  console.log("Public Key:", vapidKeys.publicKey);
+  console.log("Private Key:", vapidKeys.privateKey);
+}
 
-const vapidPath = '.vapid.json';
-// We will move the generation logic to a helper function that is called AFTER fs is imported!
-
-
-
+webpush.setVapidDetails(
+  "mailto:lucasdocarbono@gmail.com",
+  vapidKeys.publicKey,
+  vapidKeys.privateKey,
+);
 import { eq, desc, asc, inArray, or } from "drizzle-orm";
 import fs from "fs";
 import { Resend } from 'resend';
@@ -58,27 +66,6 @@ import { Resend } from 'resend';
 const resend = new Resend(process.env.RESEND_API_KEY || "re_123");
 import https from "https";
 import path from "path";
-
-if (!vapidKeys.publicKey || !vapidKeys.privateKey) {
-  try {
-    if (fs.existsSync(vapidPath)) {
-      vapidKeys = JSON.parse(fs.readFileSync(vapidPath, 'utf-8'));
-    } else {
-      vapidKeys = webpush.generateVAPIDKeys();
-      fs.writeFileSync(vapidPath, JSON.stringify(vapidKeys, null, 2));
-      console.log("Generated and saved new VAPID keys to .vapid.json");
-    }
-  } catch (e) {
-    console.error("Error reading/writing VAPID keys", e);
-    vapidKeys = webpush.generateVAPIDKeys();
-  }
-}
-webpush.setVapidDetails(
-  "mailto:lucasdocarbono@gmail.com",
-  vapidKeys.publicKey,
-  vapidKeys.privateKey,
-);
-
 import { differenceInDays, format, isBefore, parseISO } from "date-fns";
 
 const UPLOADS_DIR = path.join(process.cwd(), "uploads");
@@ -597,8 +584,7 @@ export function setupRoutes(app: Express) {
 
   // Client Login
   app.post("/api/auth/client/login", async (req, res) => {
-    try {
-      const { cnpj, password } = req.body;
+    const { cnpj, password } = req.body;
 
     // Check if it's the admin
     const adminUser = String(process.env.ADMIN || "admin").trim();
@@ -655,10 +641,6 @@ export function setupRoutes(app: Express) {
         firstAccessDone: client.firstAccessDone,
       },
     });
-    } catch(err) {
-      console.error("Login erro:", err);
-      return res.status(500).json({ error: "Erro interno: banco de dados inacessível ou não configurado." });
-    }
   });
 
   // Accountant Login
@@ -2397,24 +2379,12 @@ export function setupRoutes(app: Express) {
         const clientId = (req as any).user.clientId;
         const { subscriptionObject, fcmToken, deviceName } = req.body;
 
-        // Check if subscription already exists for this client to avoid duplicates
-        const existingSubs = await db.select().from(subscriptions).where(eq(subscriptions.clientId, clientId));
-        let exists = false;
-        if (subscriptionObject) {
-          const subObjStr = JSON.stringify(subscriptionObject);
-          exists = existingSubs.some(s => s.subscriptionObject && JSON.stringify(s.subscriptionObject) === subObjStr);
-        } else if (fcmToken) {
-          exists = existingSubs.some(s => s.fcmToken === fcmToken);
-        }
-
-        if (!exists) {
-          await db.insert(subscriptions).values({
-            clientId,
-            subscriptionObject,
-            fcmToken,
-            deviceName: deviceName || "Dispositivo",
-          });
-        }
+        await db.insert(subscriptions).values({
+          clientId,
+          subscriptionObject,
+          fcmToken,
+          deviceName: deviceName || "Dispositivo",
+        });
         res.status(201).json({ success: true });
       } catch (e: any) {
         res.status(500).json({ error: e.message });

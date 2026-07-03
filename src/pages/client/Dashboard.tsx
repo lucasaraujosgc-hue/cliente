@@ -74,7 +74,7 @@ export function ClientDashboard() {
   });
   const [pushDismissed, setPushDismissed] = useState<boolean>(() => {
     if (typeof window !== "undefined") {
-      return localStorage.getItem("dismissedPushPrompt_v4") === "true";
+      return localStorage.getItem("dismissedPushPrompt_v2") === "true";
     }
     return false;
   });
@@ -156,18 +156,6 @@ export function ClientDashboard() {
     window.addEventListener('open-notifications', handleOpenNotif);
     return () => window.removeEventListener('open-notifications', handleOpenNotif);
   }, []);
-  useEffect(() => {
-    // Auto-subscribe if already granted, or if using Capacitor (which handles it differently)
-    if (typeof window !== "undefined") {
-      const isCapacitor = (window as any).Capacitor !== undefined;
-      if (isCapacitor) {
-        handleRequestPushPermission(true);
-      } else if ("Notification" in window && Notification.permission === "granted") {
-        handleRequestPushPermission(true);
-      }
-    }
-  }, []);
-
 
   useEffect(() => {
     if (data) {
@@ -203,15 +191,10 @@ export function ClientDashboard() {
 
   const handleRequestPushPermission = async (auto = false) => {
     try {
-      // For iOS non-standalone, we can't request push
-      if (isIOS && !isStandalone) {
-        if (!auto) alert("No iPhone/iPad, as notificações só funcionam se você adicionar o aplicativo à Tela de Início. Toque em Compartilhar e depois 'Adicionar à Tela de Início'.");
-        return;
-      }
-
       if ("Notification" in window) {
         let permission = Notification.permission;
         
+        // Safari PWA or older browsers might use a callback
         const requestPromise = Notification.requestPermission((res) => {
           permission = res;
         });
@@ -223,12 +206,11 @@ export function ClientDashboard() {
         setPushPermission(permission);
         if (permission === "granted") {
           await subscribeToPush();
-          if (!auto) alert("Notificações ativadas com sucesso!");
         } else if (permission === "denied") {
-          if (!auto) alert("Você bloqueou as notificações. Acesse as configurações do navegador para permitir.");
+          if (!auto) alert("As notificações estão bloqueadas no seu navegador. Você precisa ir nas configurações do navegador ou do aplicativo para permitir.");
         }
       } else {
-        if (!auto) alert("Seu navegador não suporta notificações web.");
+        if (!auto) alert("Seu dispositivo ou navegador não suporta notificações web (no iOS, você precisa adicionar à Tela de Início primeiro).");
       }
     } catch (e) {
       console.error("Erro ao solicitar notificações:", e);
@@ -244,36 +226,43 @@ export function ClientDashboard() {
       let subscriptionObject = null;
 
       if (isCapacitor) {
+        // Handle Capacitor Mobile Push Notifications (FCM)
         const PushNotifications = (window as any).Capacitor.Plugins.PushNotifications;
         if (PushNotifications) {
           let permStatus = await PushNotifications.checkPermissions();
           if (permStatus.receive === 'prompt') {
             permStatus = await PushNotifications.requestPermissions();
           }
-          if (permStatus.receive !== 'granted') return;
+          if (permStatus.receive !== 'granted') {
+            throw new Error('User denied push permission');
+          }
           
           await PushNotifications.register();
           
-          fcmToken = await new Promise((resolve) => {
-            PushNotifications.addListener('registration', (token: any) => resolve(token.value));
-            PushNotifications.addListener('registrationError', () => resolve(null));
+          // Wait for token using a Promise
+          fcmToken = await new Promise((resolve, reject) => {
+            PushNotifications.addListener('registration', (token: any) => {
+              resolve(token.value);
+            });
+            PushNotifications.addListener('registrationError', (error: any) => {
+              reject(error);
+            });
+            // Timeout just in case it doesn't fire
             setTimeout(() => resolve(null), 5000);
           });
         }
       } else if ("serviceWorker" in navigator && "PushManager" in window) {
-        if (Notification.permission !== "granted") return;
+        // Handle Web Push (PWA/Browser)
+        if (Notification.permission !== "granted") {
+          return;
+        }
 
         const registration = await navigator.serviceWorker.ready;
         
+        // Get public key
         const response = await apiFetch("/api/vapidPublicKey");
         const vapidPublicKey = await response.text();
         const convertedVapidKey = urlBase64ToUint8Array(vapidPublicKey);
-
-        // Always unsubscribe old to ensure fresh key
-        const oldSub = await registration.pushManager.getSubscription();
-        if (oldSub) {
-          await oldSub.unsubscribe().catch(e => console.error("Error unsubscribing", e));
-        }
 
         subscriptionObject = await registration.pushManager.subscribe({
           userVisibleOnly: true,
@@ -284,20 +273,47 @@ export function ClientDashboard() {
       if (fcmToken || subscriptionObject) {
         await apiFetch("/api/notifications/subscribe", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+          },
           body: JSON.stringify({
             subscriptionObject,
             fcmToken,
             deviceName: navigator.userAgent
           })
         });
-        console.log("Push notifications subscribed successfully!");
+        console.log("Push notifications subscribed!");
+        // We can show a small alert or toast, but console.log is fine.
+        // Let's at least alert if it's not capacitor so they know it worked.
+        if (!isCapacitor) {
+           alert("Notificações ativadas com sucesso!");
+        }
       }
     } catch (e) {
       console.error("Failed to subscribe to push notifications", e);
+      const isCapacitor = typeof window !== "undefined" && (window as any).Capacitor !== undefined;
+      if (!isCapacitor) {
+        alert("Erro ao se inscrever nas notificações. Verifique se o navegador suporta Web Push.");
+      }
     }
   };
 
+
+  useEffect(() => {
+    loadData();
+    checkPushPermission();
+    
+    if (typeof window !== "undefined" && "Notification" in window) {
+      if (Notification.permission === "granted") {
+        subscribeToPush();
+      }
+    } else {
+      const isCapacitor = typeof window !== "undefined" && (window as any).Capacitor !== undefined;
+      if (isCapacitor) {
+        subscribeToPush();
+      }
+    }
+  }, []);
 
 
   function urlBase64ToUint8Array(base64String: string) {
@@ -598,7 +614,7 @@ export function ClientDashboard() {
       )}
 
       {/* 🔔 DIALOG/MODAL FOR PUSH NOTIFICATION REQUEST */}
-      {pushPermission === "default" && !pushDismissed && typeof window !== "undefined" && !((window as any).Capacitor !== undefined) && (
+      {pushPermission === "default" && !pushDismissed && typeof window !== "undefined" && "Notification" in window && !((window as any).Capacitor !== undefined) && (!isIOS || isStandalone) && (
         <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/65 backdrop-blur-md p-4 animate-in fade-in duration-300">
           <div className="relative w-full max-w-md bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-100 dark:border-slate-800 overflow-hidden animate-in zoom-in-95 duration-300">
             
@@ -634,7 +650,7 @@ export function ClientDashboard() {
               
               <button 
                 onClick={() => {
-                  localStorage.setItem("dismissedPushPrompt_v4", "true");
+                  localStorage.setItem("dismissedPushPrompt_v2", "true");
                   setPushDismissed(true);
                 }} 
                 className="w-full py-3 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 active:scale-[0.98] text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700 font-semibold rounded-2xl transition-all text-sm flex items-center justify-center"
