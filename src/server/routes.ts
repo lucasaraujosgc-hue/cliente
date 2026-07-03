@@ -597,7 +597,8 @@ export function setupRoutes(app: Express) {
 
   // Client Login
   app.post("/api/auth/client/login", async (req, res) => {
-    const { cnpj, password } = req.body;
+    try {
+      const { cnpj, password } = req.body;
 
     // Check if it's the admin
     const adminUser = String(process.env.ADMIN || "admin").trim();
@@ -654,6 +655,10 @@ export function setupRoutes(app: Express) {
         firstAccessDone: client.firstAccessDone,
       },
     });
+    } catch(err) {
+      console.error("Login erro:", err);
+      return res.status(500).json({ error: "Erro interno: banco de dados inacessível ou não configurado." });
+    }
   });
 
   // Accountant Login

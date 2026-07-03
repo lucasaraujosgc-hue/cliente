@@ -11,7 +11,13 @@ export const pool = new Pool({
 export const db = drizzle(pool, { schema });
 
 export async function initDb() {
-  const client = await pool.connect();
+  let client;
+  try {
+    client = await pool.connect();
+  } catch (err) {
+    console.error("Failed to connect to the database. Is DATABASE_URL set?", err.message);
+    return;
+  }
   try {
     // Basic automatic table creation for quick testing if they don't exist
     await client.query(`
