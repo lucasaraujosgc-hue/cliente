@@ -241,7 +241,7 @@ export function AccountantNotifications() {
               : "text-slate-500 hover:text-slate-800 dark:hover:text-slate-300"
           }`}
         >
-          <Bell className="w-3.5 h-3.5 inline mr-1.5" /> Envio Imediato
+          <Bell className="w-3.5 h-3.5 inline mr-1.5" /> Notificações Push
         </button>
         <button
           onClick={() => setActiveTab('agendado')}
@@ -266,7 +266,7 @@ export function AccountantNotifications() {
       </div>
 
       {activeTab === 'imediato' && (
-        /* TAB 1: ENVIO IMEDIATO */
+        /* TAB 1: NOTIFICAÇÕES PUSH */
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
           {/* Formulário de Envio */}
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-xs">

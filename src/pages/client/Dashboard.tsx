@@ -156,6 +156,18 @@ export function ClientDashboard() {
     window.addEventListener('open-notifications', handleOpenNotif);
     return () => window.removeEventListener('open-notifications', handleOpenNotif);
   }, []);
+  useEffect(() => {
+    // Auto-subscribe if already granted, or if using Capacitor (which handles it differently)
+    if (typeof window !== "undefined") {
+      const isCapacitor = (window as any).Capacitor !== undefined;
+      if (isCapacitor) {
+        handleRequestPushPermission(true);
+      } else if ("Notification" in window && Notification.permission === "granted") {
+        handleRequestPushPermission(true);
+      }
+    }
+  }, []);
+
 
   useEffect(() => {
     if (data) {
@@ -586,7 +598,7 @@ export function ClientDashboard() {
       )}
 
       {/* 🔔 DIALOG/MODAL FOR PUSH NOTIFICATION REQUEST */}
-      {pushPermission === "default" && !pushDismissed && typeof window !== "undefined" && "Notification" in window && !((window as any).Capacitor !== undefined) && (
+      {pushPermission === "default" && !pushDismissed && typeof window !== "undefined" && !((window as any).Capacitor !== undefined) && (
         <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/65 backdrop-blur-md p-4 animate-in fade-in duration-300">
           <div className="relative w-full max-w-md bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-100 dark:border-slate-800 overflow-hidden animate-in zoom-in-95 duration-300">
             
