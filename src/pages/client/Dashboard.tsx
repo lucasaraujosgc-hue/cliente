@@ -264,10 +264,25 @@ export function ClientDashboard() {
         const vapidPublicKey = await response.text();
         const convertedVapidKey = urlBase64ToUint8Array(vapidPublicKey);
 
-        subscriptionObject = await registration.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: convertedVapidKey
-        });
+        try {
+          subscriptionObject = await registration.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: convertedVapidKey
+          });
+        } catch (subErr: any) {
+          // If the server's VAPID key changed, it throws an error. We need to unsubscribe and try again.
+          if (subErr.message && subErr.message.includes("applicationServerKey")) {
+            console.warn("VAPID key changed, resetting subscription...");
+            const oldSub = await registration.pushManager.getSubscription();
+            if (oldSub) await oldSub.unsubscribe();
+            subscriptionObject = await registration.pushManager.subscribe({
+              userVisibleOnly: true,
+              applicationServerKey: convertedVapidKey
+            });
+          } else {
+            throw subErr;
+          }
+        }
       }
 
       if (fcmToken || subscriptionObject) {
